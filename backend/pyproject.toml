@@ -1,0 +1,41 @@
+[tool.poetry]
+name = "winning-sales-content-hub-backend"
+version = "0.1.0"
+description = "Backend API for Winning Sales Content Hub"
+authors = ["Your Name <your.email@example.com>"]
+packages = [{include = "app"}] # Add this line to specify the package directory
+# readme = "README.md" # Removed this line
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.104.0"
+uvicorn = {extras = ["standard"], version = "^0.23.2"}
+sqlmodel = "^0.0.16" # Updated version for Pydantic v2 compatibility
+psycopg2-binary = "^2.9.9"
+alembic = "^1.12.0"
+python-dotenv = "^1.0.0"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+passlib = {extras = ["bcrypt"], version = "^1.7"} # Updated passlib constraint
+bcrypt = "^4.0" # Explicitly add bcrypt
+email-validator = "^2.0.0"
+python-multipart = "^0.0.6"
+pydantic-settings = "^2.0.0"
+bleach = "^6.0.0" # Added for HTML sanitization
+markdown-it-py = "^3.0.0" # Added for data migration
+requests = "^2.31.0" # Added for making HTTP requests (e.g., to LinkedIn API)
+apscheduler = "^3.10.4" # Added for scheduling background tasks
+cryptography = "^42.0.8" # Added for encrypting sensitive data like tokens
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.2"
+httpx = "^0.25.0"
+black = "^23.10.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'

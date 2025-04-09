@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  body {
+    /* Use brand background and foreground */
+    @apply bg-brand-background text-brand-foreground; 
+  }
+  
+  /* Adjust heading colors if needed, default uses body text color */
+  h1 {
+    @apply text-3xl font-bold mb-4;
+  }
+  
+  h2 {
+    @apply text-2xl font-semibold mb-3; /* Slightly less bold */
+  }
+  
+  h3 {
+    @apply text-xl font-semibold mb-2; /* Slightly less bold */
+  }
+}
+
+@layer components {
+  /* Base button style - Refined padding, rounded-md, focus state */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-medium text-sm transition-colors duration-150 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  /* Primary button - Using primary color, white text */
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-500;
+  }
+  
+  /* Secondary button - Light gray background, darker text */
+  .btn-secondary {
+    @apply btn bg-gray-100 text-gray-700 hover:bg-gray-200 focus-visible:ring-primary-500 border border-gray-300;
+  }
+
+  /* Tertiary/Ghost button - Transparent background */
+   .btn-ghost {
+     @apply btn text-gray-600 hover:bg-gray-100 focus-visible:ring-primary-500;
+   }
+
+   /* Destructive button - Using brand accent */
+   .btn-danger {
+      @apply btn bg-brand-accent1 text-white hover:bg-red-700 focus-visible:ring-red-500;
+   }
+  
+  /* Card style - Softer shadow, slightly more rounded */
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6;
+  }
+  
+  /* Form input - Subtle border, improved focus */
+  .form-input {
+    @apply block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm;
+  }
+
+  /* Form select - Similar styling to input */
+   .form-select {
+     @apply block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm;
+   }
+  
+  /* Form label - Slightly lighter text */
+  .form-label {
+    @apply block text-sm font-medium text-gray-600 mb-1;
+  }
+}

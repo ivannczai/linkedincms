@@ -1,0 +1,41 @@
+# Docker Compose Override configuration for PRODUCTION
+# This file adds the backend and frontend services for production runs.
+# Usage: docker compose up (automatically merges with docker-compose.yml)
+# version: '3.8' # Removed obsolete version tag
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile # Use production Dockerfile
+    env_file:
+      - .env # Load backend settings (SECRET_KEY, FIRST_SUPERUSER_*, etc.)
+    environment:
+      # Define DATABASE_URL using variables from .env, pointing to 'db' service
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    ports:
+      - "8000:8000" # Map host 8000 to container 8000
+    depends_on:
+      db:
+        condition: service_healthy # Wait for DB to be healthy
+    # Entrypoint and CMD are defined in the Dockerfile (runs entrypoint.sh)
+    entrypoint: ["/app/entrypoint.sh"] # Ensure production entrypoint is used
+    command: [] # Ensure default CMD from Dockerfile is used by entrypoint
+    restart: unless-stopped # Optional: Restart backend if it stops
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile # Use production Dockerfile (Nginx)
+    env_file:
+      - .env # Load frontend settings if any (e.g., VITE_API_URL for build args if needed)
+    ports:
+      # Map host 80 to container 80 (Nginx)
+      - "80:80"
+    depends_on:
+      - backend # Wait for backend (optional, Nginx can start independently)
+    # Entrypoint and CMD are defined in the Dockerfile (starts Nginx)
+    restart: unless-stopped # Optional: Restart frontend if it stops
+
+# db service is defined in the base docker-compose.yml
+# volumes are defined in the base docker-compose.yml
