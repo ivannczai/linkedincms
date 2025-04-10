@@ -7,18 +7,14 @@ for the application.
 import os
 from typing import Any, Dict, List, Optional, Union
 from pathlib import Path # Import Path
-from dotenv import load_dotenv # Import load_dotenv
 
 from pydantic import AnyHttpUrl, PostgresDsn, validator, EmailStr
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict # Import SettingsConfigDict
 
-# Explicitly load .env file from project root
-# Assumes config.py is in backend/app/core/, so go up 3 levels
+# Define the path to the .env file in the project root
+# Assumes config.py is in backend/app/core/
+# Go up three levels to reach the project root where .env should be
 env_path = Path(__file__).parent.parent.parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
-# print(f"Attempting to load .env file from: {env_path}") # Debug print - Remove later
-# print(f"LINKEDIN_CLIENT_ID from env: {os.getenv('LINKEDIN_CLIENT_ID')}") # Debug print - Remove later
-
 
 class Settings(BaseSettings):
     """
@@ -29,7 +25,7 @@ class Settings(BaseSettings):
         API_V1_STR: API version prefix
         SECRET_KEY: Secret key for JWT token generation
         ACCESS_TOKEN_EXPIRE_MINUTES: Expiration time for access tokens in minutes
-        BACKEND_CORS_ORIGINS: List of origins that should be allowed for CORS
+        BACKEND_CORS_ORIGINS: Comma-separated string of origins allowed for CORS
         DATABASE_URL: PostgreSQL database connection string
         FIRST_SUPERUSER_EMAIL: Email for the first admin user created on startup
         FIRST_SUPERUSER_PASSWORD: Password for the first admin user created on startup
@@ -46,10 +42,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
 
     # CORS
-    # Type hint is List[str], pydantic-settings should handle comma-separated env var
-    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000", "http://localhost:5173", "http://localhost"]
-
-    # Removed custom validator assemble_cors_origins
+    # Read as a string, split later in main.py
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
     # Database
     DATABASE_URL: str
@@ -66,14 +60,27 @@ class Settings(BaseSettings):
     # Frontend URL (for redirects etc.)
     FRONTEND_URL_BASE: str = "http://localhost:3000" # Default for local dev
 
-    class Config:
-        """
-        Pydantic configuration for Settings.
-        """
-        case_sensitive = True
-        # env_file = ".env" # No longer needed as we load explicitly above
-        env_file_encoding = 'utf-8' # Specify encoding just in case
-
+    # Use model_config instead of Config class for Pydantic v2+
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=env_path, # Explicitly set the path
+        env_file_encoding='utf-8',
+        extra='ignore' # Ignore extra variables found in .env file
+    )
 
 # Create settings instance
-settings = Settings()
+try:
+    settings = Settings()
+except Exception as e:
+    print(f"DEBUG: Error loading Settings: {e}")
+    # Attempt to find the .env path manually for debugging
+    try:
+        from pathlib import Path
+        potential_path = Path('.env').resolve()
+        print(f"DEBUG: Potential .env path based on CWD: {potential_path}")
+        if not potential_path.exists():
+             # Check parent directories if needed
+             pass
+    except Exception:
+        pass # Ignore errors during debug printing
+    raise e # Re-raise the original error
