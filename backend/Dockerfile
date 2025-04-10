@@ -22,12 +22,15 @@ COPY pyproject.toml poetry.lock* ./
 # Install dependencies using the lock file
 RUN poetry install --no-interaction --no-ansi --no-root
 
-# Copy the entrypoint script and make it executable
+# Copy the entrypoint script first (can be cached if it doesn't change often)
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# RUN chmod +x /app/entrypoint.sh # Moved chmod lower
 
 # Copy the rest of the application code
 COPY . .
+
+# Ensure entrypoint is executable AFTER all code is copied
+RUN chmod +x /app/entrypoint.sh
 
 # Dependencies (including the app in editable mode) are already installed
 
