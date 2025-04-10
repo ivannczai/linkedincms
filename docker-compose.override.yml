@@ -29,6 +29,9 @@ services:
       dockerfile: Dockerfile # Use production Dockerfile (Nginx)
     env_file:
       - .env # Load frontend settings if any (e.g., VITE_API_URL for build args if needed)
+    environment:
+      # Pass server name variable to Nginx container for substitution
+      - NGINX_SERVER_NAME=${NGINX_SERVER_NAME}
     ports:
       # Map host 80 to container 80 (Nginx)
       - "80:80"
