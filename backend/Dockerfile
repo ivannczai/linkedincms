@@ -24,7 +24,6 @@ RUN poetry install --no-interaction --no-ansi --no-root
 
 # Copy the entrypoint script first (can be cached if it doesn't change often)
 COPY entrypoint.sh /app/entrypoint.sh
-# RUN chmod +x /app/entrypoint.sh # Moved chmod lower
 
 # Copy the rest of the application code
 COPY . .
