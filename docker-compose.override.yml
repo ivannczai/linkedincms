@@ -33,8 +33,13 @@ services:
       # Pass server name variable to Nginx container for substitution
       - NGINX_SERVER_NAME=${NGINX_SERVER_NAME}
     ports:
-      # Map host 80 to container 80 (Nginx)
+      # Map host 80 to container 80 (Nginx) for HTTP -> HTTPS redirect
       - "80:80"
+      # Map host 443 to container 443 (Nginx) for HTTPS
+      - "443:443"
+    volumes:
+      # Mount Let's Encrypt certificates into the container (read-only)
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend # Wait for backend (optional, Nginx can start independently)
     # Entrypoint and CMD are defined in the Dockerfile (starts Nginx)
