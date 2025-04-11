@@ -52,10 +52,10 @@ wait_for_db
 echo "Running database migrations..."
 alembic upgrade head
 
-# Create initial superuser using the script
+# Create initial superuser using the script as a module
 echo "Attempting to create initial superuser..."
-# Ensure the script path is correct relative to WORKDIR /app
-python /app/scripts/create_admin.py "$FIRST_SUPERUSER_EMAIL" "$FIRST_SUPERUSER_PASSWORD"
+# Run using python -m to ensure correct path context
+python -m scripts.create_admin "$FIRST_SUPERUSER_EMAIL" "$FIRST_SUPERUSER_PASSWORD"
 echo "Initial superuser creation process finished."
 
 # Start the main application (Uvicorn)

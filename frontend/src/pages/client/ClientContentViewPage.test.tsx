@@ -1,80 +1,62 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi } from 'vitest';
 import ClientContentViewPage from './ClientContentViewPage';
 import { AuthContext, AuthContextType } from '../../context/AuthContext';
-import { UserInfo } from '../../services/auth'; // Import UserInfo from correct source
-import api from '../../services/api';
+import contentService, { Content, ContentStatus } from '../../services/contents'; // Import Content type and ContentStatus enum
+import { UserInfo } from '../../services/auth'; // Import UserInfo type
 
-// Define ContentPieceRead locally if not globally available or imported correctly
-interface ContentPieceRead {
-  id: number;
-  client_id: number;
-  title: string;
-  idea: string;
-  angle: string;
-  body: string; // Assuming HTML content
-  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'POSTED'; // Add other statuses if needed
-  created_at: string;
-  updated_at: string;
-  client_rating?: number | null;
-  client_notes?: string | null;
-  posted_at?: string | null;
-}
-
-
-// Mock the API service
-vi.mock('../../services/api');
-
-// Mock react-router-dom navigation hooks
-const mockNavigate = vi.fn();
-const mockUseParams = vi.fn(() => ({ id: '1' })); // Mock useParams to return a content ID
-vi.mock('react-router-dom', () => ({
-  // Keep minimal exports needed
-  MemoryRouter: require('react-router-dom').MemoryRouter,
-  Routes: require('react-router-dom').Routes,
-  Route: require('react-router-dom').Route,
-  useParams: mockUseParams,
-  useNavigate: () => mockNavigate,
-}));
-
-// Mock AuthContext
-const mockClientUser: UserInfo = { id: 1, email: 'client@example.com', role: 'client', client_id: 1 }; // Explicitly type role
-const mockAuthContextValue: AuthContextType = {
-  user: mockClientUser,
-  isLoading: false,
-  isAuthenticated: true,
-  login: vi.fn(),
-  logout: vi.fn(),
-  error: null,
-  refetchUser: vi.fn().mockResolvedValue(undefined), // Add mock refetchUser
-};
+// Mock the contentService
+vi.mock('../../services/contents');
 
 // Mock content data
-const mockContent: ContentPieceRead = {
+const mockContent: Content = { // Add Content type annotation
   id: 1,
-  client_id: 1,
+  client_id: 10,
   title: 'Test Content Title',
   idea: 'Test Idea',
   angle: 'Test Angle',
-  body: '<p>Test Body Content</p>', // Assuming HTML content
-  status: 'PENDING_APPROVAL',
+  content_body: '## Test Body\n\nThis is markdown content.',
+  status: ContentStatus.APPROVED, // Use enum member
+  due_date: new Date().toISOString(),
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
-  client_rating: null,
-  client_notes: null,
-  posted_at: null,
+  client_rating: 4.5,
+  review_comment: null,
+  published_at: null,
+  is_active: true, // Add missing is_active property
 };
 
-// Helper to render with context and router
-const renderWithProviders = (ui: React.ReactElement) => {
-  // Reset useParams mock before each render if needed, or ensure it's consistent
-  mockUseParams.mockReturnValue({ id: '1' });
+// Mock useAuth context for a client user
+const mockClientAuthContextValue: AuthContextType = {
+  user: {
+    id: 1,
+    email: 'client@example.com',
+    role: 'client',
+    client_id: 10,
+    // Add missing properties required by UserInfo
+    full_name: 'Test Client User',
+    is_active: true,
+  } as UserInfo, // Cast to UserInfo
+  login: vi.fn(),
+  logout: vi.fn(),
+  isLoading: false,
+  isAuthenticated: true,
+  error: null,
+  refetchUser: vi.fn().mockResolvedValue(undefined),
+};
+
+// Helper to render with context and router, setting initial route
+const renderWithProviders = (
+  ui: React.ReactElement,
+  { route = '/client/contents/1', path = '/client/contents/:contentId', authValue = mockClientAuthContextValue } = {}
+) => {
+  window.history.pushState({}, 'Test page', route);
   return render(
-    <AuthContext.Provider value={mockAuthContextValue}>
-      <MemoryRouter initialEntries={['/client/contents/1']}>
+    <AuthContext.Provider value={authValue}>
+      <MemoryRouter initialEntries={[route]}>
         <Routes>
-          <Route path="/client/contents/:id" element={ui} />
+          <Route path={path} element={ui} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>
@@ -84,51 +66,50 @@ const renderWithProviders = (ui: React.ReactElement) => {
 describe('ClientContentViewPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    // Mock successful API calls by default
-    vi.mocked(api.get).mockResolvedValue({ data: mockContent });
-    vi.mocked(api.patch).mockResolvedValue({ data: { ...mockContent, status: 'APPROVED' } }); // Mock approve action
+    // Mock the API call to get content by ID
+    vi.mocked(contentService.getById).mockResolvedValue(mockContent);
   });
 
-  test('renders content details correctly', async () => {
+  test('renders content details correctly for a client', async () => {
     renderWithProviders(<ClientContentViewPage />);
 
+    // Wait for API call and check content rendering
     await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/v1/contents/1');
+      expect(contentService.getById).toHaveBeenCalledWith('1'); // ID from route param
     });
 
-    expect(screen.getByText('Test Content Title')).toBeInTheDocument();
-    expect(screen.getByText('Test Idea')).toBeInTheDocument();
-    expect(screen.getByText('Test Angle')).toBeInTheDocument();
-    // Check for body content (might need specific query if HTML is rendered)
-    expect(screen.getByText('Test Body Content')).toBeInTheDocument();
-    expect(screen.getByText('PENDING_APPROVAL')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /test content title/i })).toBeInTheDocument();
+    expect(screen.getByText(/test idea/i)).toBeInTheDocument();
+    expect(screen.getByText(/test angle/i)).toBeInTheDocument();
+    // Check for markdown rendering (e.g., presence of h2)
+    expect(await screen.findByRole('heading', { level: 2, name: /test body/i })).toBeInTheDocument();
+    expect(screen.getByText(/this is markdown content/i)).toBeInTheDocument();
+    // Check for status badge
+    expect(screen.getByText(/approved/i)).toBeInTheDocument();
+    // Check for rating display
+    expect(screen.getByText(/your rating:/i)).toBeInTheDocument();
+    // Check action buttons (Approve/Revise should NOT be visible to client)
+    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /request revision/i })).not.toBeInTheDocument();
+    // Check Mark as Posted button IS visible
+    expect(screen.getByRole('button', { name: /mark as posted/i })).toBeInTheDocument();
   });
 
-  test('shows Approve and Request Revision buttons for pending content', async () => {
+  test('displays loading state initially', () => {
+    // Mock API call to be pending, explicitly typing the promise
+    vi.mocked(contentService.getById).mockImplementation(() => new Promise<Content>(() => {}));
     renderWithProviders(<ClientContentViewPage />);
-    await waitFor(() => {
-      expect(screen.getByText('Test Content Title')).toBeInTheDocument();
-    });
-
-    expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /request revision/i })).toBeInTheDocument();
+    expect(screen.getByText(/loading content/i)).toBeInTheDocument();
   });
 
-  test('calls approve API when Approve button is clicked', async () => {
+  test('displays error message on fetch failure', async () => {
+    // Mock API call to reject
+    vi.mocked(contentService.getById).mockRejectedValue(new Error('Failed to fetch'));
     renderWithProviders(<ClientContentViewPage />);
-    await waitFor(() => {
-      expect(screen.getByText('Test Content Title')).toBeInTheDocument();
-    });
-
-    const approveButton = screen.getByRole('button', { name: /approve/i });
-    fireEvent.click(approveButton);
-
-    await waitFor(() => {
-      expect(api.patch).toHaveBeenCalledWith('/api/v1/contents/1/status', { status: 'APPROVED' });
-    });
-    // Optionally check for navigation or status update
-    // expect(mockNavigate).toHaveBeenCalledWith('/client/library'); // Example navigation check
+    expect(await screen.findByText(/failed to load content details/i)).toBeInTheDocument();
   });
 
-  // Add more tests for Request Revision, different statuses, error handling etc.
+  // Add more tests:
+  // - Test clicking "Mark as Posted" button
+  // - Test rating submission (if rating input is added here)
 });

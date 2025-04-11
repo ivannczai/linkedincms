@@ -14,8 +14,11 @@ export interface UserInfo {
   id: number;
   email: string;
   role: 'admin' | 'client';
-  client_id?: number;
+  client_id?: number; // client_id IS defined here as optional
   linkedin_id?: string | null; // Add optional linkedin_id field
+  // Add other fields from UserRead if needed by the frontend context
+  full_name: string;
+  is_active: boolean;
 }
 
 /**
@@ -34,13 +37,13 @@ export const login = async (credentials: LoginCredentials): Promise<LoginRespons
 };
 
 /**
- * Get current user information using the token
- * @returns Promise with user information
+ * Get current user information using the token by calling the /users/me endpoint.
+ * @returns Promise with user information (including client_id if applicable).
  */
 export const getCurrentUser = async (): Promise<UserInfo> => {
-  // TODO: Update the backend endpoint /api/v1/auth/test-token
-  // to return the linkedin_id field as well.
-  const response = await api.post<UserInfo>('/api/v1/auth/test-token');
+  // Call the correct endpoint that returns the UserRead schema
+  const response = await api.get<UserInfo>('/api/v1/users/me');
+  // The backend now explicitly adds client_id to the response for client users
   return response.data;
 };
 
