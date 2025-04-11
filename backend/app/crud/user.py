@@ -84,15 +84,16 @@ def update(
         update_data = obj_in
     else:
         # Use exclude_unset=True to only update fields provided in the Pydantic model
-        update_data = obj_in.dict(exclude_unset=True)
+        update_data = obj_in.model_dump(exclude_unset=True) # Use model_dump for Pydantic v2
 
-    # Hash password if provided
+    # Hash password if provided and remove plain password from update_data
     if "password" in update_data and update_data["password"]:
         hashed_password = get_password_hash(update_data["password"])
         update_data["hashed_password"] = hashed_password
-    # Remove password from update_data if it was present, even if None/empty
-    if "password" in update_data:
-        del update_data["password"]
+        del update_data["password"] # Remove plain password BEFORE iterating
+    elif "password" in update_data:
+         # Remove password field even if it's None or empty to avoid setattr error
+         del update_data["password"]
 
     # Update user attributes
     for field, value in update_data.items():

@@ -1,6 +1,6 @@
 # TASK.md - Winning Sales Content Hub
 
-**Última Atualização:** 09/04/2025 *(Planejamento Produção)*
+**Última Atualização:** 10/04/2025 *(Planejamento Melhorias Scheduler)*
 
 ## ✅ Legacy Milestones (Completed)
 
@@ -87,19 +87,28 @@
 *   [x] **23.12 (Testing - Backend):** Criar testes Pytest para os endpoints de agendamento e job.
 *   [x] **23.13 (Testing - Frontend):** Criar testes Vitest/RTL para a UI de agendamento.
 
-**Milestone 24: Production Readiness - Security & Configuration** *(Pendente)*
-*   [ ] **24.1 (Security):** Implementar criptografia para o campo `linkedin_access_token` no modelo `User` e nas operações CRUD relacionadas (usando `cryptography` e `SECRET_KEY`).
-*   [ ] **24.2 (Security):** Adicionar middleware em `main.py` para incluir headers básicos de segurança (X-Content-Type-Options, X-Frame-Options).
-*   [ ] **24.3 (Config):** Tornar `FRONTEND_URL_BASE` configurável via `Settings` em `core/config.py` (com default `http://localhost:3000`).
-*   [ ] **24.4 (Config):** Atualizar `api/endpoints/linkedin.py` para usar `settings.FRONTEND_URL_BASE` nos redirects.
-*   [ ] **24.5 (Config):** Adicionar `FRONTEND_URL_BASE` ao `.env.example` com comentário explicativo.
-*   [ ] **24.6 (Docs):** Atualizar `README.md` para enfatizar a configuração de produção do `.env` (CORS restrito ao domínio de produção, `FRONTEND_URL_BASE` correto, senhas fortes, etc.).
+**Milestone 24: Production Readiness - Security & Configuration** *(Concluído)*
+*   [x] **24.1 (Security):** Implementar criptografia para o campo `linkedin_access_token` no modelo `User` e nas operações CRUD relacionadas (usando `cryptography` e `SECRET_KEY`).
+*   [x] **24.2 (Security):** Adicionar middleware em `main.py` para incluir headers básicos de segurança (X-Content-Type-Options, X-Frame-Options).
+*   [x] **24.3 (Config):** Tornar `FRONTEND_URL_BASE` configurável via `Settings` em `core/config.py` (com default `http://localhost:3000`).
+*   [x] **24.4 (Config):** Atualizar `api/endpoints/linkedin.py` para usar `settings.FRONTEND_URL_BASE` nos redirects.
+*   [x] **24.5 (Config):** Adicionar `FRONTEND_URL_BASE` ao `.env.example` com comentário explicativo.
+*   [x] **24.6 (Docs):** Atualizar `README.md` para enfatizar a configuração de produção do `.env` (CORS restrito ao domínio de produção, `FRONTEND_URL_BASE` correto, senhas fortes, etc.).
 
-**Milestone 25: Production Readiness - Automated Docker Startup** *(Pendente)*
-*   [ ] **25.1 (Backend):** Modificar `scripts/create_admin.py` para aceitar email/senha como argumentos de linha de comando e verificar se o usuário já existe antes de criar.
-*   [ ] **25.2 (Infra):** Atualizar `backend/entrypoint.sh` para chamar o script `create_admin.py` (com variáveis de ambiente `FIRST_SUPERUSER_EMAIL`/`PASSWORD`) *após* `alembic upgrade head`.
-*   [ ] **25.3 (Backend):** Remover a lógica de criação de superusuário da função `lifespan` (ou `on_startup`) em `backend/app/main.py`.
-*   [ ] **25.4 (Docs):** Atualizar `README.md` com as instruções finais de deploy para um servidor (clonar repo, criar `.env` de produção, rodar `docker compose up --build -d`).
+**Milestone 25: Production Readiness - Automated Docker Startup** *(Concluído)*
+*   [x] **25.1 (Backend):** Modificar `scripts/create_admin.py` para aceitar email/senha como argumentos de linha de comando e verificar se o usuário já existe antes de criar.
+*   [x] **25.2 (Infra):** Atualizar `backend/entrypoint.sh` para chamar o script `create_admin.py` (com variáveis de ambiente `FIRST_SUPERUSER_EMAIL`/`PASSWORD`) *após* `alembic upgrade head`.
+*   [x] **25.3 (Backend):** Remover a lógica de criação de superusuário da função `lifespan` (ou `on_startup`) em `backend/app/main.py`.
+*   [x] **25.4 (Docs):** Atualizar `README.md` com as instruções finais de deploy para um servidor (clonar repo, criar `.env` de produção, rodar `docker compose up --build -d`).
+
+**Milestone 26: LinkedIn Scheduler Improvements** *(Pendente)*
+*   [ ] **26.1 (DB):** Add `retry_count` field to `ScheduledLinkedInPost` model.
+*   [ ] **26.2 (DB):** Generate and apply Alembic migration for `retry_count`.
+*   [ ] **26.3 (Backend):** Modify `crud/scheduled_post.py` (`update_post_status`) to handle error messages correctly during retries/failures.
+*   [ ] **26.4 (Backend):** Modify scheduler job in `main.py` to implement retry logic for transient API errors (increment `retry_count`, update `scheduled_at`, update `error_message`).
+*   [ ] **26.5 (Backend):** Modify scheduler job in `main.py` to save specific error messages (token expiry, scope issue, final API failure) when marking posts as `FAILED`.
+*   [ ] **26.6 (Frontend):** Update `LinkedInSchedulerPage.tsx` to display the `error_message` for failed posts.
+*   [ ] **26.7 (Testing):** Update backend/frontend tests to cover retry logic and error message display.
 
 ---
 
@@ -133,3 +142,7 @@
 *   08/04/2025: Corrigir prefixo de API em chamadas frontend.
 *   08/04/2025: Atualizar `UserInfo` no frontend e endpoint `/test-token` no backend para incluir `linkedin_id`.
 *   08/04/2025: Adicionar links de navegação para Settings e LinkedIn Scheduler na Sidebar.
+*   10/04/2025: Corrigir erro de parsing de `List[str]` do `.env` por `pydantic-settings` (usar string simples + split manual).
+*   10/04/2025: Corrigir erro `extra_forbidden` por `pydantic-settings` adicionando `extra='ignore'`.
+*   10/04/2025: Corrigir erro de autenticação DB local (`create_admin.py`) resetando volume e usando `trust` temporariamente, depois revertendo e aplicando migrações.
+*   10/04/2025: Corrigir erro `relation "user" does not exist` no `create_admin.py` aplicando migrações pendentes.

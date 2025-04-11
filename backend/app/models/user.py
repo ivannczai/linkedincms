@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, TYPE_CHECKING
 
-from pydantic import EmailStr, validator
+from pydantic import EmailStr, validator, computed_field # Import computed_field
 from sqlmodel import Field, SQLModel, Relationship
 from sqlalchemy import String # Import String type
 
@@ -74,7 +74,7 @@ class UserCreate(UserBase):
 
 class UserRead(UserBase, BaseModel):
     """
-    Schema for reading user data, including LinkedIn ID.
+    Schema for reading user data, including LinkedIn ID and client_id.
     Excludes sensitive fields like password and access token.
     """
     # Inherits id, created_at, updated_at from BaseModel
@@ -82,6 +82,24 @@ class UserRead(UserBase, BaseModel):
     last_login: Optional[datetime] = None
     linkedin_id: Optional[str] = None
     # Do NOT include linkedin_access_token or linkedin_token_expires_at here for security
+
+    # Add client_id derived from the relationship
+    # This requires the client_profile relationship to be loaded when fetching the user
+    # for the /users/me endpoint. Ensure the dependency loader handles this.
+    client_id: Optional[int] = None # Add the field
+
+    # If using Pydantic v2 and SQLModel >= 0.0.14, computed_field is preferred
+    # @computed_field
+    # @property
+    # def client_id(self) -> Optional[int]:
+    #     if self.client_profile:
+    #         return self.client_profile.id
+    #     return None
+
+    # For older versions or simpler approach, we might need to populate this manually
+    # in the endpoint if the relationship isn't automatically loaded/serialized.
+    # However, SQLModel often handles this if the relationship is defined.
+    # Let's add the field first and see if it populates automatically.
 
 
 class UserUpdate(SQLModel):

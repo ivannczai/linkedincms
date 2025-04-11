@@ -2,8 +2,9 @@
 Main FastAPI application module for Winning Sales Content Hub.
 """
 import logging
+import time # Import time for sleep
 from contextlib import asynccontextmanager # Import asynccontextmanager for lifespan
-from datetime import datetime, timezone # Import datetime, timezone
+from datetime import datetime, timezone, timedelta # Import timedelta
 
 from fastapi import FastAPI, Depends, Request # Import Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,28 +28,45 @@ logger = logging.getLogger(__name__)
 
 # --- Scheduler Setup ---
 scheduler = BackgroundScheduler(timezone="UTC") # Use UTC for consistency
+MAX_RETRIES = 3 # Define max number of retries
+RETRY_DELAY_MINUTES = 5 # Base delay in minutes for first retry
+
+def is_retryable_error(e: requests.exceptions.RequestException) -> bool:
+    """Check if a requests exception indicates a potentially temporary issue."""
+    if isinstance(e, (requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
+        return True
+    if e.response is not None:
+        # Retry on server errors (5xx) and rate limiting (429)
+        return e.response.status_code >= 500 or e.response.status_code == 429
+    return False
 
 def publish_scheduled_linkedin_posts():
     """
     Job function executed by the scheduler to publish due posts.
-    (Implementation for Task 23.8)
+    Includes retry logic for transient errors.
     """
     logger.info("Scheduler: Checking for LinkedIn posts to publish...")
-    # Create a new session scope for this background job
     with Session(engine) as session:
         try:
             now = datetime.now(timezone.utc)
+            # Fetch posts scheduled for now or earlier, AND whose retry count is acceptable
             pending_posts = crud.scheduled_post.get_pending_posts_to_publish(session=session, now=now)
             logger.info(f"Scheduler: Found {len(pending_posts)} posts due for publishing.")
 
             for post in pending_posts:
-                logger.info(f"Scheduler: Attempting to publish post ID {post.id} for user ID {post.user_id}")
+                # Skip if already processed in this run (e.g., if retried immediately)
+                # This check might be redundant if get_pending_posts filters correctly, but adds safety
+                if post.status != PostStatus.PENDING or post.scheduled_at > now:
+                     continue
+
+                logger.info(f"Scheduler: Attempting to publish post ID {post.id} (Retry {post.retry_count}) for user ID {post.user_id}")
                 user = crud.user.get(session=session, user_id=post.user_id)
+                error_message_prefix = f"Failed Post ID {post.id}: "
 
                 if not user:
-                    logger.error(f"Scheduler: User ID {post.user_id} not found for post ID {post.id}. Skipping.")
+                    logger.error(f"Scheduler: User ID {post.user_id} not found for post ID {post.id}. Failing permanently.")
                     crud.scheduled_post.update_post_status(
-                        session=session, db_obj=post, status=PostStatus.FAILED, error_message="User not found"
+                        session=session, db_obj=post, status=PostStatus.FAILED, error_message=error_message_prefix + "User not found"
                     )
                     continue
 
@@ -57,40 +75,38 @@ def publish_scheduled_linkedin_posts():
                 if user.linkedin_access_token:
                     decrypted_access_token = decrypt_data(user.linkedin_access_token)
 
-                # Check token validity - Apply timezone fix here as well
+                # Check token validity
                 token_expires_at = user.linkedin_token_expires_at
                 if token_expires_at and token_expires_at.tzinfo is None:
                     token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
 
-                if not decrypted_access_token or \
-                   not token_expires_at or \
-                   token_expires_at <= now: # Compare aware with aware
-                    logger.warning(f"Scheduler: LinkedIn token invalid, expired, or failed decryption for user ID {user.id}, post ID {post.id}. Skipping.")
+                if not decrypted_access_token or not token_expires_at or token_expires_at <= now:
+                    logger.warning(f"Scheduler: LinkedIn token invalid, expired, or failed decryption for user ID {user.id}, post ID {post.id}. Failing permanently.")
                     crud.scheduled_post.update_post_status(
-                        session=session, db_obj=post, status=PostStatus.FAILED, error_message="Token expired or invalid/decryption failed"
+                        session=session, db_obj=post, status=PostStatus.FAILED, error_message=error_message_prefix + "Token expired or invalid/decryption failed"
                     )
                     continue
 
-                # Check scope - Apply comma/space split fix here too
+                # Check scope
                 scopes_list = []
                 if user.linkedin_scopes:
                     scopes_list = [s.strip() for s in user.linkedin_scopes.replace(',', ' ').split()]
 
                 if "w_member_social" not in scopes_list:
-                    logger.warning(f"Scheduler: Missing 'w_member_social' scope for user ID {user.id}, post ID {post.id}. Granted: '{user.linkedin_scopes}'")
+                    logger.warning(f"Scheduler: Missing 'w_member_social' scope for user ID {user.id}, post ID {post.id}. Failing permanently. Granted: '{user.linkedin_scopes}'")
                     crud.scheduled_post.update_post_status(
-                        session=session, db_obj=post, status=PostStatus.FAILED, error_message="Missing required scope"
+                        session=session, db_obj=post, status=PostStatus.FAILED, error_message=error_message_prefix + "Missing required scope 'w_member_social'"
                     )
                     continue
 
-                # --- Call LinkedIn API to publish (Task 23.8 Logic) ---
+                # --- Call LinkedIn API to publish ---
                 post_payload = {
                     "author": f"urn:li:person:{user.linkedin_id}",
                     "lifecycleState": "PUBLISHED",
                     "specificContent": {
                         "com.linkedin.ugc.ShareContent": {
                             "shareCommentary": {"text": post.content_text},
-                            "shareMediaCategory": "NONE" # Text only for now
+                            "shareMediaCategory": "NONE"
                         }
                     },
                     "visibility": {
@@ -98,7 +114,6 @@ def publish_scheduled_linkedin_posts():
                     }
                 }
                 headers = {
-                    # Use the decrypted token
                     "Authorization": f"Bearer {decrypted_access_token}",
                     "X-Restli-Protocol-Version": "2.0.0",
                     "Content-Type": "application/json"
@@ -107,30 +122,42 @@ def publish_scheduled_linkedin_posts():
 
                 try:
                     response = requests.post(linkedin_post_url, headers=headers, json=post_payload, timeout=30)
-                    response.raise_for_status() # Raise HTTPError for bad responses
-
-                    # Extract post ID from response header if possible
+                    response.raise_for_status()
                     linkedin_post_id = response.headers.get("X-RestLi-Id") or response.headers.get("x-restli-id")
-
                     logger.info(f"Scheduler: Successfully published post ID {post.id} to LinkedIn. LinkedIn Post ID: {linkedin_post_id}")
                     crud.scheduled_post.update_post_status(
                         session=session, db_obj=post, status=PostStatus.PUBLISHED, linkedin_post_id=linkedin_post_id
                     )
 
                 except requests.exceptions.RequestException as e:
-                    error_detail = f"API Error: {e.response.status_code} - {e.response.text}" if e.response else f"Request Error: {e}"
-                    logger.error(f"Scheduler: Failed to publish post ID {post.id} to LinkedIn. {error_detail}")
-                    crud.scheduled_post.update_post_status(
-                        session=session, db_obj=post, status=PostStatus.FAILED, error_message=error_detail[:255] # Limit error message length if needed
-                    )
+                    # Check if error is retryable and retry limit not reached
+                    if post.retry_count < MAX_RETRIES and is_retryable_error(e):
+                        retry_delay_seconds = (RETRY_DELAY_MINUTES * 60) * (2 ** post.retry_count) # Exponential backoff (5m, 20m, 80m)
+                        new_schedule_time = now + timedelta(seconds=retry_delay_seconds)
+                        retry_msg = f"API Error (Retry {post.retry_count + 1}/{MAX_RETRIES} scheduled for {new_schedule_time.isoformat()}): {e}"
+                        logger.warning(f"Scheduler: Post ID {post.id} failed with retryable error. {retry_msg}")
+                        crud.scheduled_post.update_for_retry(
+                            session=session,
+                            db_obj=post,
+                            new_scheduled_at=new_schedule_time,
+                            retry_error_message=retry_msg[:255] # Truncate if needed
+                        )
+                    else:
+                        # Not retryable or max retries reached - fail permanently
+                        error_detail = f"API Error: {e.response.status_code} - {e.response.text}" if e.response else f"Request Error: {e}"
+                        logger.error(f"Scheduler: Failed to publish post ID {post.id} after {post.retry_count} retries or due to non-retryable error. {error_detail}")
+                        crud.scheduled_post.update_post_status(
+                            session=session, db_obj=post, status=PostStatus.FAILED, error_message=(error_message_prefix + error_detail)[:255]
+                        )
                 except Exception as e:
-                    logger.error(f"Scheduler: Unexpected error publishing post ID {post.id}: {e}")
+                    # Catch any other unexpected errors during publishing
+                    logger.error(f"Scheduler: Unexpected error publishing post ID {post.id}: {e}", exc_info=True)
                     crud.scheduled_post.update_post_status(
-                        session=session, db_obj=post, status=PostStatus.FAILED, error_message=f"Unexpected error: {str(e)[:200]}"
+                        session=session, db_obj=post, status=PostStatus.FAILED, error_message=(error_message_prefix + f"Unexpected error: {str(e)[:200]}")
                     )
             logger.info("Scheduler: Finished checking posts.")
         except Exception as e:
-            # Catch broad exceptions to prevent the scheduler job from crashing
+            # Catch broad exceptions during the whole check cycle
             logger.error(f"Scheduler: Error during post publishing cycle: {e}", exc_info=True)
 
 
@@ -141,7 +168,6 @@ async def lifespan(app: FastAPI):
     logger.info("Running application startup tasks...")
     # Superuser creation is now handled by entrypoint.sh for Docker deployments
     # For local dev, it needs to be run manually via the script.
-    # Consider adding a check or command for local dev setup if needed.
 
     # Start the scheduler
     try:
@@ -185,9 +211,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # CORS Middleware (should generally be one of the last middlewares)
+# Split the comma-separated string from settings into a list
+cors_origins = [origin.strip() for origin in settings.BACKEND_CORS_ORIGINS.split(',') if origin]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=cors_origins, # Use the processed list
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

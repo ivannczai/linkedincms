@@ -33,6 +33,7 @@ class ScheduledLinkedInPostBase(SQLModel):
     status: PostStatus = Field(default=PostStatus.PENDING, index=True)
     linkedin_post_id: Optional[str] = Field(default=None, index=True) # Store the ID returned by LinkedIn API
     error_message: Optional[str] = Field(default=None)
+    retry_count: int = Field(default=0) # Added retry counter
 
 
 class ScheduledLinkedInPost(BaseModel, ScheduledLinkedInPostBase, TimestampMixin, table=True):
@@ -47,8 +48,11 @@ class ScheduledLinkedInPost(BaseModel, ScheduledLinkedInPostBase, TimestampMixin
 class ScheduledLinkedInPostCreate(ScheduledLinkedInPostBase):
     """
     Schema for creating a scheduled post via API.
-    Status, linkedin_post_id, error_message are set by the system.
+    Status, linkedin_post_id, error_message, retry_count are set by the system.
     """
+    # Exclude fields set by the system during creation if necessary,
+    # but Pydantic usually handles extra fields if the model validates.
+    # For clarity, we could define specific fields here if needed.
     pass
 
 

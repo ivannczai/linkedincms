@@ -12,9 +12,10 @@ interface ScheduledLinkedInPostRead {
   scheduled_at: string; // ISO string format from backend
   status: 'pending' | 'published' | 'failed';
   linkedin_post_id?: string | null;
-  error_message?: string | null;
+  error_message?: string | null; // Error message from backend
   created_at: string;
   updated_at: string;
+  retry_count?: number; // Include retry_count if needed for display
 }
 
 const LinkedInSchedulerPage: React.FC = () => {
@@ -228,8 +229,12 @@ const LinkedInSchedulerPage: React.FC = () => {
                      {post.status === 'published' && post.linkedin_post_id && (
                         <span className="ml-4 text-xs text-gray-400" title={`LinkedIn Post ID: ${post.linkedin_post_id}`}>Published</span>
                      )}
-                     {post.status === 'failed' && post.error_message && (
-                        <p className="ml-4 text-xs text-red-500" title={post.error_message}>Error: {post.error_message.substring(0, 50)}...</p>
+                     {/* Display error message if status is failed */}
+                     {post.status === 'failed' && (
+                        <p className="ml-4 text-xs text-red-500" title={post.error_message || 'Unknown error'}>
+                          Error: {(post.error_message || 'Unknown error').substring(0, 50)}
+                          {(post.error_message || '').length > 50 ? '...' : ''}
+                        </p>
                      )}
                   </div>
                 </div>

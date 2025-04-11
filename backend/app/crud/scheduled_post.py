@@ -27,7 +27,7 @@ def create_scheduled_post(
     Returns:
         The created ScheduledLinkedInPost object.
     """
-    # Create the database object, status defaults to PENDING
+    # Create the database object, status defaults to PENDING, retry_count defaults to 0
     db_obj = ScheduledLinkedInPost.model_validate(obj_in)
     session.add(db_obj)
     session.commit()
@@ -103,14 +103,14 @@ def update_post_status(
     error_message: Optional[str] = None
 ) -> ScheduledLinkedInPost:
     """
-    Update the status of a scheduled post (e.g., after publishing or failure).
+    Update the status of a scheduled post (e.g., after publishing or permanent failure).
 
     Args:
         session: Database session.
         db_obj: The ScheduledLinkedInPost object to update.
         status: The new status (PUBLISHED or FAILED).
         linkedin_post_id: The ID returned by LinkedIn API upon successful publishing.
-        error_message: The error message if publishing failed.
+        error_message: The error message if publishing failed permanently.
 
     Returns:
         The updated ScheduledLinkedInPost object.
@@ -119,9 +119,42 @@ def update_post_status(
     if status == PostStatus.PUBLISHED:
         db_obj.linkedin_post_id = linkedin_post_id
         db_obj.error_message = None # Clear any previous error
+        db_obj.retry_count = 0 # Reset retry count on success
     elif status == PostStatus.FAILED:
         db_obj.error_message = error_message
         db_obj.linkedin_post_id = None # Clear any previous post ID
+        # retry_count is not reset here, it reflects the count when it failed
+
+    session.add(db_obj)
+    session.commit()
+    session.refresh(db_obj)
+    return db_obj
+
+
+def update_for_retry(
+    session: Session,
+    *,
+    db_obj: ScheduledLinkedInPost,
+    new_scheduled_at: datetime,
+    retry_error_message: str
+) -> ScheduledLinkedInPost:
+    """
+    Update a scheduled post for a retry attempt. Increments retry count,
+    updates scheduled time, and sets a temporary error message.
+
+    Args:
+        session: Database session.
+        db_obj: The ScheduledLinkedInPost object to update.
+        new_scheduled_at: The new time to schedule the retry for.
+        retry_error_message: Message indicating a retry is scheduled.
+
+    Returns:
+        The updated ScheduledLinkedInPost object.
+    """
+    db_obj.retry_count += 1
+    db_obj.scheduled_at = new_scheduled_at
+    db_obj.error_message = retry_error_message
+    # Status remains PENDING
 
     session.add(db_obj)
     session.commit()

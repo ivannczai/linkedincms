@@ -4,7 +4,7 @@ Security related utilities.
 Includes password hashing, token creation/verification, and data encryption.
 """
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone # Ensure timezone is imported
 from typing import Any, Union, Optional
 
 from jose import jwt
@@ -77,9 +77,9 @@ def create_access_token(
 ) -> str:
     """Create a JWT access token."""
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta # Use timezone.utc
     else:
-        expire = datetime.now(timezone.utc) + timedelta(
+        expire = datetime.now(timezone.utc) + timedelta( # Use timezone.utc
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
     to_encode = {"exp": expire, "sub": str(subject)}

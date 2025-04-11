@@ -1,5 +1,6 @@
 # Build stage
-FROM node:18-alpine as build
+# Corrected casing: FROM ... AS ...
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
