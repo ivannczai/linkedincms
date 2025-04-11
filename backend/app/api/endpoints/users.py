@@ -10,7 +10,8 @@ from sqlmodel import Session, select
 
 from app.api.deps import get_current_admin_user, get_current_user, get_session
 from app.crud import user as user_crud
-from app.models.user import User, UserCreate, UserRead, UserUpdate
+from app.crud import client as client_crud # Import client crud
+from app.models.user import User, UserCreate, UserRead, UserUpdate, UserRole # Import UserRole
 
 router = APIRouter()
 
@@ -24,25 +25,16 @@ def read_users(
 ) -> Any:
     """
     Retrieve users.
-
-    Args:
-        session: Database session
-        current_user: Current admin user
-        skip: Number of users to skip
-        limit: Maximum number of users to return
-
-    Returns:
-        List[UserRead]: List of users
     """
-    # Ensure relationships needed for UserRead are loaded if necessary
-    # (SQLModel might handle this automatically depending on access patterns)
     users = session.exec(select(User).offset(skip).limit(limit)).all()
     # Manually populate client_id for each user before returning
     users_read = []
     for user in users:
-        user_data = UserRead.model_validate(user) # Validate against schema first
-        if user.client_profile:
-            user_data.client_id = user.client_profile.id
+        user_data = UserRead.model_validate(user)
+        # Eagerly load or query profile if needed
+        profile = client_crud.get_by_user_id(session, user_id=user.id)
+        if profile:
+            user_data.client_id = profile.id
         users_read.append(user_data)
     return users_read
 
@@ -54,23 +46,18 @@ def read_user_me(
 ) -> Any:
     """
     Get current user. Includes client_id if applicable.
-
-    Args:
-        current_user: Current user from token dependency
-        session: Database session
-
-    Returns:
-        UserRead: Current user data including client_id
     """
-    # Ensure the client_profile relationship is loaded.
-    # The dependency might already load it, but explicit refresh/load can ensure it.
-    # Refreshing the user object from the session might load relationships.
-    session.refresh(current_user) # Attempt to refresh/load relationships
-
-    # Create the UserRead object and manually set client_id
+    # Create the UserRead object from the current user
     user_data = UserRead.model_validate(current_user)
-    if current_user.client_profile:
-        user_data.client_id = current_user.client_profile.id
+
+    # Explicitly query for the client profile if the user is a client
+    if current_user.role == UserRole.CLIENT:
+        client_profile = client_crud.get_by_user_id(session, user_id=current_user.id)
+        if client_profile:
+            user_data.client_id = client_profile.id
+        else:
+            # Log a warning if a client user has no profile - indicates data inconsistency
+            print(f"Warning: Client user {current_user.email} (ID: {current_user.id}) has no associated client profile.")
 
     return user_data
 
@@ -83,17 +70,6 @@ def read_user(
 ) -> Any:
     """
     Get user by ID. Includes client_id if applicable.
-
-    Args:
-        user_id: User ID
-        session: Database session
-        current_user: Current admin user
-
-    Returns:
-        UserRead: User data including client_id
-
-    Raises:
-        HTTPException: If user not found
     """
     user = user_crud.get(session, user_id)
     if not user:
@@ -103,8 +79,10 @@ def read_user(
         )
     # Manually populate client_id before returning
     user_data = UserRead.model_validate(user)
-    if user.client_profile:
-        user_data.client_id = user.client_profile.id
+    if user.role == UserRole.CLIENT:
+        profile = client_crud.get_by_user_id(session, user_id=user.id)
+        if profile:
+            user_data.client_id = profile.id
     return user_data
 
 
@@ -116,17 +94,6 @@ def create_user(
 ) -> Any:
     """
     Create new user.
-
-    Args:
-        user_in: User creation data
-        session: Database session
-        current_user: Current admin user
-
-    Returns:
-        UserRead: Created user data including client_id
-
-    Raises:
-        HTTPException: If user with same email already exists
     """
     user = user_crud.get_by_email(session, email=user_in.email)
     if user:
@@ -135,10 +102,9 @@ def create_user(
             detail="User with this email already exists",
         )
     user = user_crud.create(session, obj_in=user_in)
-    # Manually populate client_id before returning
+    # Manually populate client_id before returning (will be None here)
     user_data = UserRead.model_validate(user)
-    if user.client_profile: # Should be None for direct user creation
-        user_data.client_id = user.client_profile.id
+    user_data.client_id = None # Explicitly set to None as profile is not created here
     return user_data
 
 
@@ -151,18 +117,6 @@ def update_user(
 ) -> Any:
     """
     Update a user.
-
-    Args:
-        user_id: User ID
-        user_in: User update data
-        session: Database session
-        current_user: Current admin user
-
-    Returns:
-        UserRead: Updated user data including client_id
-
-    Raises:
-        HTTPException: If user not found
     """
     user = user_crud.get(session, user_id)
     if not user:
@@ -173,8 +127,10 @@ def update_user(
     user = user_crud.update(session, db_obj=user, obj_in=user_in)
     # Manually populate client_id before returning
     user_data = UserRead.model_validate(user)
-    if user.client_profile:
-        user_data.client_id = user.client_profile.id
+    if user.role == UserRole.CLIENT:
+        profile = client_crud.get_by_user_id(session, user_id=user.id)
+        if profile:
+            user_data.client_id = profile.id
     return user_data
 
 
@@ -186,18 +142,12 @@ def update_user_me(
 ) -> Any:
     """
     Update current user.
-
-    Args:
-        user_in: User update data
-        session: Database session
-        current_user: Current user
-
-    Returns:
-        UserRead: Updated user data including client_id
     """
     user = user_crud.update(session, db_obj=current_user, obj_in=user_in)
     # Manually populate client_id before returning
     user_data = UserRead.model_validate(user)
-    if user.client_profile:
-        user_data.client_id = user.client_profile.id
+    if user.role == UserRole.CLIENT:
+        profile = client_crud.get_by_user_id(session, user_id=user.id)
+        if profile:
+            user_data.client_id = profile.id
     return user_data
