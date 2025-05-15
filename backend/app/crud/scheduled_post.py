@@ -3,7 +3,7 @@ CRUD operations for ScheduledLinkedInPost model.
 """
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-
+from fastapi import status
 from sqlmodel import Session, select
 
 from app.models.scheduled_post import (
@@ -13,6 +13,11 @@ from app.models.scheduled_post import (
     PostStatus
 )
 
+class PostDeletionError(Exception):
+    """Custom exception for post deletion errors."""
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
 
 def create_scheduled_post(
     session: Session, *, obj_in: ScheduledLinkedInPostCreate
@@ -173,6 +178,9 @@ def delete_scheduled_post(session: Session, *, post_id: int, user_id: int) -> Op
 
     Returns:
         The deleted ScheduledLinkedInPost object if found and deleted, otherwise None.
+
+    Raises:
+        PostDeletionError: If the post is not in PENDING status.
     """
     db_obj = session.exec(
         select(ScheduledLinkedInPost)
@@ -185,8 +193,7 @@ def delete_scheduled_post(session: Session, *, post_id: int, user_id: int) -> Op
 
     # Optional: Only allow deletion if status is PENDING
     if db_obj.status != PostStatus.PENDING:
-         # Or raise an exception, depending on desired behavior
-        return None
+        raise PostDeletionError("Can only delete posts that are in PENDING status.")
 
     session.delete(db_obj)
     session.commit()

@@ -4,6 +4,7 @@ API endpoints for LinkedIn integration.
 import logging
 from typing import List, Optional
 from urllib.parse import urlencode
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
@@ -23,6 +24,7 @@ from app.models.scheduled_post import ( # Import scheduled post models
     ScheduledLinkedInPostUpdate # Add update if needed later
 )
 from app.core.security import decrypt_data # Import decrypt_data
+from app.crud.scheduled_post import PostDeletionError # Import PostDeletionError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -45,15 +47,25 @@ async def initiate_linkedin_connection(
     Generates the LinkedIn authorization URL and redirects the user.
     Stores a temporary state value associated with the user.
     """
+    logger.info(f"Starting LinkedIn connection process for user ID {current_user.id}")
+    
     if not settings.LINKEDIN_CLIENT_ID or not settings.LINKEDIN_CLIENT_SECRET or not settings.LINKEDIN_REDIRECT_URI:
         logger.error("LinkedIn OAuth settings are not configured.")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="LinkedIn integration is not configured.")
 
+    # Clear any existing states for this user before starting new connection
+    logger.info(f"Clearing existing states for user ID {current_user.id}")
+    oauth_state_manager.clear_user_states(current_user.id)
+    
     state = oauth_state_manager.generate_state()
-    oauth_state_manager.store_state(state, current_user.id) # Store user ID with state
+    logger.info(f"Generated new state for user ID {current_user.id}: {state}")
+    
+    oauth_state_manager.store_state(state, current_user.id)
+    logger.info(f"Stored state for user ID {current_user.id}")
 
     # Define required scopes
-    scopes = ["openid", "profile", "email", "w_member_social"] # Added w_member_social
+    scopes = ["openid", "profile", "email", "w_member_social"]
+    logger.info(f"Using scopes: {scopes}")
 
     auth_url_params = {
         "response_type": "code",
@@ -63,24 +75,26 @@ async def initiate_linkedin_connection(
         "scope": " ".join(scopes),
     }
     authorization_url = f"https://www.linkedin.com/oauth/v2/authorization?{urlencode(auth_url_params)}"
+    logger.info(f"Generated authorization URL with state: {state}")
 
-    # Instead of redirecting, return the URL for the frontend to handle
     return {"authorization_url": authorization_url}
 
 
 @router.get("/connect/callback", summary="Handle LinkedIn OAuth Callback")
 async def linkedin_connection_callback(
-    request: Request, # Add Request to access session
+    request: Request,
     code: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
     error_description: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
-    session: Session = Depends(get_session), # Add DB session dependency
+    session: Session = Depends(get_session),
 ):
     """
     Handles the callback from LinkedIn after user authorization.
     Exchanges the authorization code for an access token and stores it.
     """
+    logger.info(f"Received LinkedIn callback with state: {state}, code: {code}, error: {error}")
+    
     if error:
         logger.error(f"LinkedIn OAuth error: {error} - {error_description}")
         return _redirect_to_frontend({"linkedin_status": "error", "detail": error_description or error})
@@ -90,10 +104,13 @@ async def linkedin_connection_callback(
         return _redirect_to_frontend({"linkedin_status": "error", "detail": "Missing authorization code or state"})
 
     # Verify state and get associated user ID
+    logger.info(f"Verifying state: {state}")
     user_id = oauth_state_manager.verify_and_consume_state(state)
     if not user_id:
-        logger.warning("Invalid or expired state parameter received from LinkedIn callback.")
+        logger.warning(f"Invalid or expired state parameter received from LinkedIn callback: {state}")
         return _redirect_to_frontend({"linkedin_status": "error", "detail": "Invalid or expired state"})
+    
+    logger.info(f"State verified successfully for user ID: {user_id}")
 
     # Exchange code for access token
     token_url = "https://www.linkedin.com/oauth/v2/accessToken"
@@ -271,14 +288,85 @@ async def delete_scheduled_post(
     """
     Delete a PENDING scheduled LinkedIn post.
     """
-    deleted_post = crud.scheduled_post.delete_pending_post(
-        session=session, post_id=post_id, user_id=current_user.id
-    )
-    if not deleted_post:
-        # Raise 404 if post not found OR if it wasn't pending/didn't belong to user
+    try:
+        deleted_post = crud.scheduled_post.delete_scheduled_post(
+            session=session, post_id=post_id, user_id=current_user.id
+        )
+        if not deleted_post:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pending scheduled post not found or you do not have permission to delete it.",
+            )
+        logger.info(f"User ID {current_user.id} deleted pending LinkedIn post ID {post_id}")
+        return None # Return None for 204 response
+    except PostDeletionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/scheduled/{post_id}", response_model=ScheduledLinkedInPostRead)
+async def get_scheduled_post(
+    *,
+    session: Session = Depends(get_session),
+    post_id: int,
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Get details of a specific scheduled post.
+    """
+    post = crud.scheduled_post.get_scheduled_post(session=session, post_id=post_id)
+    if not post or post.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pending scheduled post not found or you do not have permission to delete it.",
+            detail="Scheduled post not found or you do not have permission to view it."
         )
-    logger.info(f"User ID {current_user.id} deleted pending LinkedIn post ID {post_id}")
-    return None # Return None for 204 response
+    return post
+
+
+@router.post("/disconnect", summary="Disconnect LinkedIn Account")
+async def disconnect_linkedin(
+    current_user: User = Depends(deps.get_current_active_user),
+    session: Session = Depends(get_session),
+):
+    """
+    Disconnects the user's LinkedIn account by clearing their LinkedIn credentials.
+    """
+    try:
+        logger.info(f"Starting LinkedIn disconnect for user ID {current_user.id}")
+        
+        # Clear LinkedIn details
+        linkedin_details = {
+            "linkedin_id": None,
+            "linkedin_access_token": None,
+            "linkedin_token_expires_at": None,
+            "linkedin_scopes": None,
+        }
+        
+        # Update user with cleared LinkedIn data
+        logger.info(f"Updating user {current_user.id} with cleared LinkedIn data")
+        updated_user = crud.user.update_linkedin_details(session=session, db_obj=current_user, linkedin_data=linkedin_details)
+        
+        if not updated_user:
+            logger.error(f"Failed to update user {current_user.id} - user not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Clear any stored OAuth state for this user
+        logger.info(f"Clearing OAuth states for user {current_user.id}")
+        oauth_state_manager.clear_user_states(current_user.id)
+        
+        logger.info(f"Successfully disconnected LinkedIn for user ID {current_user.id}")
+        return {"status": "success", "message": "LinkedIn account disconnected successfully"}
+    except HTTPException as he:
+        logger.error(f"HTTP error during LinkedIn disconnect for user {current_user.id}: {str(he)}")
+        raise he
+    except Exception as e:
+        logger.error(f"Failed to disconnect LinkedIn for user ID {current_user.id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to disconnect LinkedIn account: {str(e)}"
+        )

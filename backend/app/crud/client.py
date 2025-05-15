@@ -6,13 +6,13 @@ This module contains CRUD operations for the ClientProfile model.
 from typing import List, Optional, Union, Dict, Any
 
 from sqlmodel import Session, select
-
-from sqlmodel import Session, select
-from fastapi import HTTPException, status # Import HTTPException and status
+from fastapi import HTTPException, status
 
 from app.models.client import ClientProfile, ClientProfileCreate, ClientProfileUpdate
-from app.models.user import User, UserRole, UserCreate # Import UserCreate
-from app.crud.user import create as create_user, get_by_email # Import user create/get functions
+from app.models.user import User, UserRole, UserCreate
+from app.models.strategy import Strategy
+from app.models.content import ContentPiece
+from app.crud.user import create as create_user, get_by_email
 
 
 def get(session: Session, client_id: int) -> Optional[ClientProfile]:
@@ -151,7 +151,7 @@ def update(
 
 def delete(session: Session, *, client_id: int) -> Optional[ClientProfile]:
     """
-    Delete a client profile.
+    Delete a client profile and all associated data.
 
     Args:
         session: Database session
@@ -159,11 +159,51 @@ def delete(session: Session, *, client_id: int) -> Optional[ClientProfile]:
 
     Returns:
         Optional[ClientProfile]: Deleted client profile if found, None otherwise
+        
+    Raises:
+        HTTPException: If deletion fails
     """
-    client = session.get(ClientProfile, client_id)
-    if client:
-        # Also delete the associated user? Or just deactivate?
-        # For now, just deleting the profile. Consider user lifecycle.
+    try:
+        print(f"Starting deletion of client {client_id}")
+        client = session.get(ClientProfile, client_id)
+        if not client:
+            print(f"Client {client_id} not found")
+            return None
+            
+        print(f"Found client {client_id}, checking for associated data")
+        
+        # Check for associated strategy
+        strategy = session.exec(
+            select(Strategy).where(Strategy.client_id == client_id)
+        ).first()
+        if strategy:
+            print(f"Found strategy {strategy.id} for client {client_id}")
+            session.delete(strategy)
+            session.commit()
+            print(f"Deleted strategy {strategy.id}")
+                
+        # Check for associated content pieces
+        content_pieces = session.exec(
+            select(ContentPiece).where(ContentPiece.client_id == client_id)
+        ).all()
+        if content_pieces:
+            print(f"Found {len(content_pieces)} content pieces for client {client_id}")
+            for piece in content_pieces:
+                session.delete(piece)
+            session.commit()
+            print(f"Deleted all content pieces")
+                
+        # Delete client profile
+        print(f"Deleting client profile {client_id}")
         session.delete(client)
         session.commit()
-    return client
+        print(f"Successfully deleted client {client_id}")
+            
+        return client
+    except Exception as e:
+        print(f"Error in delete operation: {str(e)}")
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete client: {str(e)}"
+        )

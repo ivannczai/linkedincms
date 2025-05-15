@@ -23,7 +23,10 @@ from app.core.security import get_password_hash, decrypt_data # Import decrypt_d
 from app import crud # Import crud
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # --- Scheduler Setup ---
@@ -45,19 +48,32 @@ def publish_scheduled_linkedin_posts():
     Job function executed by the scheduler to publish due posts.
     Includes retry logic for transient errors.
     """
-    logger.info("Scheduler: Checking for LinkedIn posts to publish...")
+    logger.info("Scheduler: Starting LinkedIn post publishing job...")
     with Session(engine) as session:
         try:
             now = datetime.now(timezone.utc)
+            logger.info(f"Scheduler: Current time (UTC): {now.isoformat()}")
+            
             # Fetch posts scheduled for now or earlier, AND whose retry count is acceptable
             pending_posts = crud.scheduled_post.get_pending_posts_to_publish(session=session, now=now)
             logger.info(f"Scheduler: Found {len(pending_posts)} posts due for publishing.")
+            
+            if not pending_posts:
+                logger.info("Scheduler: No posts to publish at this time.")
+                return
 
             for post in pending_posts:
-                # Skip if already processed in this run (e.g., if retried immediately)
-                # This check might be redundant if get_pending_posts filters correctly, but adds safety
-                if post.status != PostStatus.PENDING or post.scheduled_at > now:
-                     continue
+                logger.info(f"Scheduler: Processing post ID {post.id} (scheduled for {post.scheduled_at.isoformat()})")
+                
+                # Convert scheduled_at to UTC if it's naive
+                scheduled_at = post.scheduled_at
+                if scheduled_at.tzinfo is None:
+                    scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+                
+                # Skip if already processed in this run
+                if post.status != PostStatus.PENDING or scheduled_at > now:
+                    logger.info(f"Scheduler: Skipping post ID {post.id} - status: {post.status}, scheduled_at: {scheduled_at.isoformat()}")
+                    continue
 
                 logger.info(f"Scheduler: Attempting to publish post ID {post.id} (Retry {post.retry_count}) for user ID {post.user_id}")
                 user = crud.user.get(session=session, user_id=post.user_id)
@@ -73,7 +89,12 @@ def publish_scheduled_linkedin_posts():
                 # Decrypt the stored access token
                 decrypted_access_token = None
                 if user.linkedin_access_token:
-                    decrypted_access_token = decrypt_data(user.linkedin_access_token)
+                    try:
+                        decrypted_access_token = decrypt_data(user.linkedin_access_token)
+                        logger.info(f"Scheduler: Successfully decrypted token for user ID {user.id}")
+                    except Exception as e:
+                        logger.error(f"Scheduler: Failed to decrypt token for user ID {user.id}: {e}")
+                        decrypted_access_token = None
 
                 # Check token validity
                 token_expires_at = user.linkedin_token_expires_at
@@ -91,6 +112,7 @@ def publish_scheduled_linkedin_posts():
                 scopes_list = []
                 if user.linkedin_scopes:
                     scopes_list = [s.strip() for s in user.linkedin_scopes.replace(',', ' ').split()]
+                    logger.info(f"Scheduler: User ID {user.id} has scopes: {scopes_list}")
 
                 if "w_member_social" not in scopes_list:
                     logger.warning(f"Scheduler: Missing 'w_member_social' scope for user ID {user.id}, post ID {post.id}. Failing permanently. Granted: '{user.linkedin_scopes}'")
@@ -120,6 +142,7 @@ def publish_scheduled_linkedin_posts():
                 }
                 linkedin_post_url = "https://api.linkedin.com/v2/ugcPosts"
 
+                logger.info(f"Scheduler: Sending request to LinkedIn API for post ID {post.id}")
                 try:
                     response = requests.post(linkedin_post_url, headers=headers, json=post_payload, timeout=30)
                     response.raise_for_status()
@@ -224,9 +247,20 @@ app.add_middleware(
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+@app.get("/test-publish")
+async def test_publish():
+    """
+    Test endpoint to manually trigger the LinkedIn post publishing job.
+    """
+    try:
+        logger.info("Manually triggering LinkedIn post publishing job...")
+        publish_scheduled_linkedin_posts()
+        return {"status": "success", "message": "Publishing job triggered"}
+    except Exception as e:
+        logger.error(f"Error triggering publishing job: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 # Removed create_first_superuser function as it's now handled by the script
-
 
 @app.get("/")
 async def root():
@@ -262,6 +296,19 @@ async def healthcheck(session: Session = Depends(get_session)):
     except Exception as e:
         logger.error(f"Healthcheck database connection error: {e}")
         return {"status": "unhealthy", "database": "connection error"}
+
+@app.get("/test-publish")
+async def test_publish():
+    """
+    Test endpoint to manually trigger the LinkedIn post publishing job.
+    """
+    try:
+        logger.info("Manually triggering LinkedIn post publishing job...")
+        publish_scheduled_linkedin_posts()
+        return {"status": "success", "message": "Publishing job triggered"}
+    except Exception as e:
+        logger.error(f"Error triggering publishing job: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 
 if __name__ == "__main__":

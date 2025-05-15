@@ -4,7 +4,7 @@ import contentService from '../../services/contents';
 // Removed MarkdownPreview import
 import { formatDate } from '../../utils/formatters';
 import { useAuth } from '../../context/AuthContext';
-import StarRatingInput from '../common/StarRatingInput'; // Import rating component
+import CustomStarRating from '../common/CustomStarRating'; // Заменяем импорт
 
 interface ContentViewProps {
   content: Content;
@@ -87,7 +87,7 @@ const ContentView: React.FC<ContentViewProps> = ({ content, onContentUpdated }) 
         {isAdmin && content.client_rating !== null && content.client_rating !== undefined && (
            <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
               <span className="text-sm font-medium text-gray-500">Client Rating:</span>
-              <StarRatingInput ratingValue={content.client_rating} readOnly={true} size={20} />
+              <CustomStarRating rating={content.client_rating} readOnly={true} size={20} />
            </div>
         )}
 

@@ -26,6 +26,44 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped # Optional: Restart DB if it stops unexpectedly
+    networks:
+      - app-network
+
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - NGINX_SERVER_NAME=localhost
+      - VITE_API_URL=http://backend:8000
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
 
 # Define the named volume for persistent DB data
 volumes:

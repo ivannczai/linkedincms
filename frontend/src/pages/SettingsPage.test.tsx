@@ -145,7 +145,9 @@ describe('SettingsPage', () => {
         id: 1,
         email: 'test@example.com',
         role: 'admin',
-        linkedin_id: 'mock-li-id' // Add linkedin_id
+        linkedin_id: 'mock-li-id', // Add linkedin_id
+        full_name: 'Test User',
+        is_active: true
     };
     const authValueWithRefetch = {
         ...mockAuthContextValue,

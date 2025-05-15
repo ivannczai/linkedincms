@@ -123,22 +123,30 @@ def update_linkedin_details(
     Returns:
         User: Updated user object
     """
-    db_obj.linkedin_id = linkedin_data.get("linkedin_id", db_obj.linkedin_id)
-    db_obj.linkedin_token_expires_at = linkedin_data.get("linkedin_token_expires_at", db_obj.linkedin_token_expires_at)
-    db_obj.linkedin_scopes = linkedin_data.get("linkedin_scopes", db_obj.linkedin_scopes)
+    try:
+        db_obj.linkedin_id = linkedin_data.get("linkedin_id", db_obj.linkedin_id)
+        db_obj.linkedin_token_expires_at = linkedin_data.get("linkedin_token_expires_at", db_obj.linkedin_token_expires_at)
+        db_obj.linkedin_scopes = linkedin_data.get("linkedin_scopes", db_obj.linkedin_scopes)
 
-    # Encrypt the access token before saving
-    access_token = linkedin_data.get("linkedin_access_token")
-    if access_token:
-        db_obj.linkedin_access_token = encrypt_data(access_token)
-    else:
-        # Handle case where token might be explicitly set to None (e.g., disconnect)
-        db_obj.linkedin_access_token = None
+        # Encrypt the access token before saving
+        access_token = linkedin_data.get("linkedin_access_token")
+        if access_token:
+            db_obj.linkedin_access_token = encrypt_data(access_token)
+        else:
+            # Handle case where token might be explicitly set to None (e.g., disconnect)
+            db_obj.linkedin_access_token = None
 
-    session.add(db_obj)
-    session.commit()
-    session.refresh(db_obj)
-    return db_obj
+        session.add(db_obj)
+        session.commit()
+        session.refresh(db_obj)
+        
+        if not db_obj:
+            raise ValueError("Failed to update user")
+            
+        return db_obj
+    except Exception as e:
+        session.rollback()
+        raise e
 
 
 def authenticate(session: Session, email: str, password: str) -> Optional[User]:

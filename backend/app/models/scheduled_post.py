@@ -20,6 +20,7 @@ class PostStatus(str, Enum):
     PENDING = "pending"
     PUBLISHED = "published"
     FAILED = "failed"
+    DELETED = "deleted"
 
 
 class ScheduledLinkedInPostBase(SQLModel):

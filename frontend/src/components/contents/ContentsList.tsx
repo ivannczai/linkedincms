@@ -123,7 +123,7 @@ const ContentsList: React.FC<ContentsListProps> = ({
             <tr key={content.id} className="hover:bg-gray-50">
               <td className="py-3 px-4">
                 <Link
-                  to={`${basePath}/${content.client_id}/contents/${content.id}`}
+                  to={`/admin/clients/${content.client_id}/contents/${content.id}`}
                   className="font-medium text-primary-600 hover:underline"
                 >
                   {content.title}

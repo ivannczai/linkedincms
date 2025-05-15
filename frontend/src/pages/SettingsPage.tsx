@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext'; // Assuming useAuth provides user info
 import api from '../services/api'; // Corrected: Use default import
 
 const SettingsPage: React.FC = () => {
   const { user, refetchUser } = useAuth(); // Get user info and refetch function
   const location = useLocation();
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   // Initialize based on user data if available, otherwise checking
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'not_connected' | 'checking'>(
@@ -24,29 +25,52 @@ const SettingsPage: React.FC = () => {
   }, [user]); // Rerun when user object changes
 
   // Check for callback status from URL query parameters
+
   useEffect(() => {
     const queryParams = new URLSearchParams(location.search);
     const status = queryParams.get('linkedin_status');
     const detail = queryParams.get('detail');
 
-    if (status === 'success') {
-      setFeedbackMessage({ type: 'success', text: 'LinkedIn account connected successfully!' });
-      // Trigger user refetch to get updated linkedin_id
-      refetchUser().then(() => {
-         // Status will update via the other useEffect watching the user object
-         console.log("User refetched after LinkedIn connect.");
-      });
-      // Optionally clear query params from URL
-      window.history.replaceState({}, document.title, location.pathname);
-    } else if (status === 'error') {
-      setFeedbackMessage({ type: 'error', text: `Failed to connect LinkedIn account: ${detail || 'Unknown error'}` });
-      setConnectionStatus('not_connected'); // Ensure status reflects failure
-      // Optionally clear query params from URL
-      window.history.replaceState({}, document.title, location.pathname);
+    if (status) {
+      if (status === 'success') {
+        setFeedbackMessage({ type: 'success', text: 'LinkedIn account connected successfully!' });
+        // Очищаем URL и обновляем данные пользователя
+        navigate('/dashboard/settings', { replace: true });
+        refetchUser().catch(console.error);
+      } else if (status === 'error') {
+        setFeedbackMessage({ 
+          type: 'error', 
+          text: `Failed to connect LinkedIn account: ${detail || 'Unknown error'}`
+        });
+        setConnectionStatus('not_connected');
+        navigate('/dashboard/settings', { replace: true });
+      }
     }
-    // Only run this effect when location.search changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search, refetchUser]); // Add refetchUser to dependency array
+  }, [location.search, navigate, refetchUser]);
+
+  // useEffect(() => {
+  //   const queryParams = new URLSearchParams(location.search);
+  //   const status = queryParams.get('linkedin_status');
+  //   const detail = queryParams.get('detail');
+
+  //   if (status === 'success') {
+  //     setFeedbackMessage({ type: 'success', text: 'LinkedIn account connected successfully!' });
+  //     // Trigger user refetch to get updated linkedin_id
+  //     refetchUser().then(() => {
+  //        // Status will update via the other useEffect watching the user object
+  //        console.log("User refetched after LinkedIn connect.");
+  //     });
+  //     // Optionally clear query params from URL
+  //     window.history.replaceState({}, document.title, location.pathname);
+  //   } else if (status === 'error') {
+  //     setFeedbackMessage({ type: 'error', text: `Failed to connect LinkedIn account: ${detail || 'Unknown error'}` });
+  //     setConnectionStatus('not_connected'); // Ensure status reflects failure
+  //     // Optionally clear query params from URL
+  //     window.history.replaceState({}, document.title, location.pathname);
+  //   }
+  //   // Only run this effect when location.search changes
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [location.search, refetchUser]); // Add refetchUser to dependency array
 
   const handleConnectLinkedIn = async () => {
     setIsLoading(true);
@@ -71,8 +95,28 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  // TODO: Implement disconnect functionality
-  // const handleDisconnectLinkedIn = async () => { ... }
+  const handleDisconnectLinkedIn = async () => {
+    setIsLoading(true);
+    setFeedbackMessage(null);
+    try {
+      const response = await api.post('/api/v1/linkedin/disconnect');
+      if (response.data.status === 'success') {
+        setFeedbackMessage({ type: 'success', text: response.data.message });
+        setConnectionStatus('not_connected');
+        await refetchUser();
+      } else {
+        throw new Error(response.data.message || 'Failed to disconnect LinkedIn');
+      }
+    } catch (error: any) {
+      console.error('Error disconnecting LinkedIn:', error);
+      setFeedbackMessage({ 
+        type: 'error', 
+        text: `Error disconnecting LinkedIn: ${error.response?.data?.detail || error.message}` 
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="p-6">
@@ -108,11 +152,11 @@ const SettingsPage: React.FC = () => {
           )}
            {connectionStatus === 'connected' && (
             <button
-              // onClick={handleDisconnectLinkedIn} // TODO: Implement disconnect
-              disabled={true} // TODO: Enable when disconnect is implemented
+              onClick={handleDisconnectLinkedIn}
+              disabled={isLoading}
               className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
             >
-              Disconnect (Not Implemented)
+              {isLoading ? 'Disconnecting...' : 'Disconnect LinkedIn'}
             </button>
           )}
         </div>

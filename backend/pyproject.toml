@@ -16,7 +16,7 @@ alembic = "^1.12.0"
 python-dotenv = "^1.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 passlib = {extras = ["bcrypt"], version = "^1.7"} # Updated passlib constraint
-bcrypt = "^4.0" # Explicitly add bcrypt
+bcrypt = "^4.3.0" # Explicitly add bcrypt
 email-validator = "^2.0.0"
 python-multipart = "^0.0.6"
 pydantic-settings = "^2.0.0"
@@ -25,11 +25,13 @@ markdown-it-py = "^3.0.0" # Added for data migration
 requests = "^2.31.0" # Added for making HTTP requests (e.g., to LinkedIn API)
 apscheduler = "^3.10.4" # Added for scheduling background tasks
 cryptography = "^42.0.8" # Added for encrypting sensitive data like tokens
+redis = "^6.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.2"
 httpx = "^0.25.0"
 black = "^23.10.0"
+alembic = "^1.15.2"
 
 [build-system]
 requires = ["poetry-core"]
