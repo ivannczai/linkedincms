@@ -1,70 +1,60 @@
-# Docker Compose configuration ONLY for the PostgreSQL Database service
-# Used for local development (backend/frontend run directly on host)
-# and as the base for production runs (which add backend/frontend services via override).
-# version: '3.8' # Removed obsolete version tag
+version: "3.8"
 
 services:
-  db:
-    image: postgres:15-alpine
-    volumes:
-      # Mount named volume for persistent data
-      - postgres_data:/var/lib/postgresql/data/
-    env_file:
-      - .env # Load DB credentials from .env
-    environment:
-      # Ensure these are set for the image's internal setup
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      # Removed: - POSTGRES_HOST_AUTH_METHOD=trust
-    ports:
-      # Expose DB port 5432 to the host machine for local backend connection
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped # Optional: Restart DB if it stops unexpectedly
-    networks:
-      - app-network
-
-  backend:
-    build: 
-      context: ./backend
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-    ports:
-      - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - app-network
-    restart: unless-stopped
-
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    container_name: linkedincms-frontend
     environment:
-      - NGINX_SERVER_NAME=localhost
+      - NGINX_SERVER_NAME=linkedin.rafinhafaria.com.br
       - VITE_API_URL=http://backend:8000
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - backend
     networks:
       - app-network
     restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+
+  backend:
+    image: linkedincms-backend
+    container_name: linkedincms-backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/linkedincms
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  db:
+    image: postgres:15
+    container_name: linkedincms-db
+    environment:
+      POSTGRES_DB: linkedincms
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   app-network:
     driver: bridge
 
-# Define the named volume for persistent DB data
 volumes:
   postgres_data:
