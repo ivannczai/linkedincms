@@ -2,7 +2,7 @@
 CRUD operations for ScheduledLinkedInPost model.
 """
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import status
 from sqlmodel import Session, select
 
@@ -32,11 +32,19 @@ def create_scheduled_post(
     Returns:
         The created ScheduledLinkedInPost object.
     """
+    print(f"\nСтворення поста:")
+    print(f"Вхідний час (UTC): {obj_in.scheduled_at.isoformat()}")
+    print(f"Вхідний час (локальний): {obj_in.scheduled_at.astimezone().isoformat()}")
+    
     # Create the database object, status defaults to PENDING, retry_count defaults to 0
     db_obj = ScheduledLinkedInPost.model_validate(obj_in)
     session.add(db_obj)
     session.commit()
     session.refresh(db_obj)
+    
+    print(f"Збережений час (UTC): {db_obj.scheduled_at.isoformat()}")
+    print(f"Збережений час (локальний): {db_obj.scheduled_at.astimezone().isoformat()}")
+    
     return db_obj
 
 
@@ -90,13 +98,53 @@ def get_pending_posts_to_publish(session: Session, *, now: datetime) -> List[Sch
     Returns:
         A list of pending ScheduledLinkedInPost objects ready for publishing.
     """
+    # Ensure now is timezone-aware
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    print(f"\nПоточний час (UTC): {now.isoformat()}")
+    print(f"Поточний час (локальний): {now.astimezone().isoformat()}")
+
+    # Get all pending posts first
+    all_pending = session.exec(
+        select(ScheduledLinkedInPost)
+        .where(ScheduledLinkedInPost.status == PostStatus.PENDING)
+    ).all()
+
+    print(f"\nЗнайдено {len(all_pending)} постів зі статусом PENDING:")
+    for post in all_pending:
+        # Ensure post.scheduled_at is timezone-aware
+        if post.scheduled_at and post.scheduled_at.tzinfo is None:
+            post.scheduled_at = post.scheduled_at.replace(tzinfo=timezone.utc)
+            
+        print(f"\nPost ID: {post.id}")
+        print(f"Scheduled at (UTC): {post.scheduled_at.isoformat() if post.scheduled_at else 'None'}")
+        print(f"Scheduled at (локальний): {post.scheduled_at.astimezone().isoformat() if post.scheduled_at else 'None'}")
+        print(f"Часова зона: {post.scheduled_at.tzinfo if post.scheduled_at else 'None'}")
+        print(f"Порівняння з поточним: {post.scheduled_at <= now if post.scheduled_at else 'None'}")
+
+    # Then filter by scheduled time - convert now to UTC for comparison
     statement = (
         select(ScheduledLinkedInPost)
         .where(ScheduledLinkedInPost.status == PostStatus.PENDING)
         .where(ScheduledLinkedInPost.scheduled_at <= now)
         .order_by(ScheduledLinkedInPost.scheduled_at) # Process oldest first
     )
-    return session.exec(statement).all()
+    posts = session.exec(statement).all()
+
+    print(f"\nЗнайдено {len(posts)} постів для публікації:")
+    for post in posts:
+        # Ensure post.scheduled_at is timezone-aware
+        if post.scheduled_at and post.scheduled_at.tzinfo is None:
+            post.scheduled_at = post.scheduled_at.replace(tzinfo=timezone.utc)
+            
+        print(f"\nPost ID: {post.id}")
+        print(f"Scheduled at (UTC): {post.scheduled_at.isoformat() if post.scheduled_at else 'None'}")
+        print(f"Scheduled at (локальний): {post.scheduled_at.astimezone().isoformat() if post.scheduled_at else 'None'}")
+        print(f"Часова зона: {post.scheduled_at.tzinfo if post.scheduled_at else 'None'}")
+        print(f"Порівняння з поточним: {post.scheduled_at <= now if post.scheduled_at else 'None'}")
+
+    return posts
 
 
 def update_post_status(

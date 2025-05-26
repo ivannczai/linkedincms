@@ -198,7 +198,11 @@ def test_update_status(session: Session):
     assert updated.status == ContentStatus.APPROVED
     assert updated.review_comment is None
 
-    # Approved -> Published (sets published_at)
+    # Approved -> Scheduled
+    updated = update_status(session, content_id=content.id, new_status=ContentStatus.SCHEDULED)
+    assert updated.status == ContentStatus.SCHEDULED
+
+    # Scheduled -> Published (sets published_at)
     updated = update_status(session, content_id=content.id, new_status=ContentStatus.PUBLISHED)
     assert updated.status == ContentStatus.PUBLISHED
     assert updated.published_at is not None

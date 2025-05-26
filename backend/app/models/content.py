@@ -4,11 +4,11 @@ Content model module.
 This module contains the ContentPiece model and related schemas.
 """
 from typing import Optional, List, TYPE_CHECKING
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum, auto
 
 from pydantic import validator
-from sqlmodel import Field, SQLModel, Relationship, Column, Float # Add Column and Float
+from sqlmodel import Field, SQLModel, Relationship, Column, Float, TEXT # Add Column and Float
 from sqlalchemy import DateTime # Import DateTime for timezone support
 
 from app.models.base import BaseModel, TimestampMixin
@@ -25,6 +25,7 @@ class ContentStatus(str, Enum):
     PENDING_APPROVAL = "PENDING_APPROVAL"
     REVISION_REQUESTED = "REVISION_REQUESTED"
     APPROVED = "APPROVED"
+    SCHEDULED = "SCHEDULED"
     PUBLISHED = "PUBLISHED"
 
 
@@ -32,13 +33,25 @@ class ContentPieceBase(SQLModel):
     """
     Base model for ContentPiece with common fields.
     """
-    title: str = Field(index=True)
-    idea: str
-    angle: str
-    content_body: str
-    status: ContentStatus = Field(default=ContentStatus.DRAFT)
-    due_date: Optional[date] = None
+    client_id: int = Field(foreign_key="client.id", index=True)
+    title: str
+    idea: str = Field(default="")
+    angle: str = Field(default="")
+    content_body: str = Field(sa_type=TEXT)
+    status: ContentStatus = Field(default=ContentStatus.DRAFT, index=True)
+    due_date: Optional[datetime] = Field(default=None, index=True)
+    scheduled_at: Optional[datetime] = Field(default=None, index=True)
+    review_comment: Optional[str] = Field(default=None)
+    client_rating: Optional[float] = Field(default=None)
     is_active: bool = Field(default=True)
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Convert scheduled_at to UTC if it has timezone info
+        if self.scheduled_at and self.scheduled_at.tzinfo is not None:
+            self.scheduled_at = self.scheduled_at.astimezone(timezone.utc)
+        elif self.scheduled_at:
+            self.scheduled_at = self.scheduled_at.replace(tzinfo=timezone.utc)
 
 
 class ContentPiece(BaseModel, ContentPieceBase, TimestampMixin, table=True):
@@ -50,14 +63,8 @@ class ContentPiece(BaseModel, ContentPieceBase, TimestampMixin, table=True):
     # Foreign key to ClientProfile
     client_id: int = Field(foreign_key="clientprofile.id")
     
-    # Optional review comment
-    review_comment: Optional[str] = None
-    
     # Optional published timestamp
     published_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    
-    # Optional client rating
-    client_rating: Optional[float] = Field(default=None, sa_type=Float) # Add rating field
     
     # Relationships
     client_profile: "ClientProfile" = Relationship(back_populates="content_pieces")
@@ -90,6 +97,12 @@ class ContentPieceRead(ContentPieceBase, BaseModel):
     client_rating: Optional[float] = None # Add client_rating
     created_at: datetime
     updated_at: Optional[datetime] = None
+    scheduled_at: Optional[datetime] = None
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S") if v else None
+        }
 
 
 class ContentPieceUpdate(SQLModel):
@@ -105,6 +118,7 @@ class ContentPieceUpdate(SQLModel):
     is_active: Optional[bool] = None
     review_comment: Optional[str] = None
     published_at: Optional[datetime] = None # Add published_at (likely read-only via update)
+    scheduled_at: Optional[datetime] = None # Add scheduled_at
     
     @validator("due_date")
     def due_date_must_be_future(cls, v):

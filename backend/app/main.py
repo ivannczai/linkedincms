@@ -152,6 +152,12 @@ def publish_scheduled_linkedin_posts():
                         session=session, db_obj=post, status=PostStatus.PUBLISHED, linkedin_post_id=linkedin_post_id
                     )
 
+                    # If this was a content post, update the content status
+                    if post.content_id:
+                        content = crud.content.get(session=session, content_id=post.content_id)
+                        if content:
+                            crud.content.mark_as_posted(session=session, content_id=post.content_id)
+
                 except requests.exceptions.RequestException as e:
                     # Check if error is retryable and retry limit not reached
                     if post.retry_count < MAX_RETRIES and is_retryable_error(e):
@@ -196,9 +202,9 @@ async def lifespan(app: FastAPI):
     try:
         scheduler.add_job(publish_scheduled_linkedin_posts, 'interval', minutes=1, id='publish_linkedin_job', replace_existing=True)
         scheduler.start()
-        logger.info("Scheduler started.")
+        logger.info("Scheduler started successfully.")
     except Exception as e:
-        logger.error(f"Error starting scheduler: {e}")
+        logger.error(f"Error starting scheduler: {e}", exc_info=True)
 
     logger.info("Application startup tasks complete.")
     yield # Application runs here
@@ -208,7 +214,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown()
         logger.info("Scheduler shut down gracefully.")
     except Exception as e:
-        logger.error(f"Error shutting down scheduler: {e}")
+        logger.error(f"Error shutting down scheduler: {e}", exc_info=True)
     logger.info("Application shutdown complete.")
 
 

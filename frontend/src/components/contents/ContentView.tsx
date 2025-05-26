@@ -51,6 +51,8 @@ const ContentView: React.FC<ContentViewProps> = ({ content, onContentUpdated }) 
         return 'bg-red-200 text-red-800';
       case ContentStatus.APPROVED:
         return 'bg-green-200 text-green-800';
+      case ContentStatus.SCHEDULED:
+        return 'bg-purple-200 text-purple-800';
       case ContentStatus.PUBLISHED:
         return 'bg-blue-200 text-blue-800';
       default:
@@ -125,11 +127,16 @@ const ContentView: React.FC<ContentViewProps> = ({ content, onContentUpdated }) 
             {content.updated_at ? formatDate(content.updated_at) : formatDate(content.created_at)}
             {/* Show created_at if never updated */}
           </div>
-           {content.published_at && (
-             <div>
-               <span className="font-medium">Published:</span> {formatDate(content.published_at)}
-             </div>
-           )}
+          {content.scheduled_at && (
+            <div>
+              <span className="font-medium">Scheduled for:</span> {formatDate(content.scheduled_at)}
+            </div>
+          )}
+          {content.published_at && (
+            <div>
+              <span className="font-medium">Published:</span> {formatDate(content.published_at)}
+            </div>
+          )}
         </div>
 
         {error && (

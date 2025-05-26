@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Content, ContentCreateInput, ContentUpdateInput, ContentStatus } from '../../services/contents';
 import contentService from '../../services/contents';
 import { useNavigate } from 'react-router-dom';
-// Removed MarkdownEditor and MarkdownPreview imports
-import RichTextEditor from '../common/RichTextEditor'; // Import the new Rich Text Editor
-import { ClientProfile } from '../../services/clients'; // Import ClientProfile
+import { ClientProfile } from '../../services/clients';
 
 interface ContentFormProps {
   clientId?: number; // Provided when creating content for a specific client
@@ -30,7 +28,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
   const [idea, setIdea] = useState(content?.idea || '');
   const [angle, setAngle] = useState(content?.angle || '');
   // Initialize contentBody with an empty paragraph tag for Tiptap if creating new
-  const [contentBody, setContentBody] = useState(content?.content_body || '<p></p>');
+  const [contentBody, setContentBody] = useState(content?.content_body || '');
   const [dueDate, setDueDate] = useState(content?.due_date || '');
   const [isActive, setIsActive] = useState(content?.is_active ?? true);
   const [status, setStatus] = useState<ContentStatus>(content?.status || ContentStatus.DRAFT);
@@ -49,13 +47,10 @@ const ContentForm: React.FC<ContentFormProps> = ({
       // Tiptap will handle basic Markdown conversion on load if needed,
       // but ideally, this should be HTML after migration.
       // If content is empty, initialize with empty paragraph for Tiptap.
-      setContentBody(content.content_body || '<p></p>');
+      setContentBody(content.content_body || '');
       setDueDate(content.due_date || '');
       setIsActive(content.is_active);
       setStatus(content.status);
-    } else {
-      // Reset to default empty paragraph for new content
-      setContentBody('<p></p>');
     }
   }, [content]);
 
@@ -196,11 +191,11 @@ const ContentForm: React.FC<ContentFormProps> = ({
           <label htmlFor="idea" className="block text-sm font-medium text-gray-700">
             Idea
           </label>
-          <textarea
+          <input
+            type="text"
             id="idea"
             value={idea}
             onChange={(e) => setIdea(e.target.value)}
-            rows={2}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
             required
           />
@@ -210,11 +205,11 @@ const ContentForm: React.FC<ContentFormProps> = ({
           <label htmlFor="angle" className="block text-sm font-medium text-gray-700">
             Angle
           </label>
-          <textarea
+          <input
+            type="text"
             id="angle"
             value={angle}
             onChange={(e) => setAngle(e.target.value)}
-            rows={2}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
             required
           />
@@ -222,17 +217,18 @@ const ContentForm: React.FC<ContentFormProps> = ({
 
         {/* Replace Markdown Editor/Preview with Rich Text Editor */}
         <div>
-           <label htmlFor="content_body_editor" className="block text-sm font-medium text-gray-700 mb-2">
-             Content Body
-           </label>
-           <RichTextEditor
-             id="content_body_editor"
-             value={contentBody}
-             onChange={setContentBody}
-             minHeight={300}
-             required // Pass required prop for basic validation
-           />
-         </div>
+          <label htmlFor="content_body" className="block text-sm font-medium text-gray-700">
+            Content
+          </label>
+          <textarea
+            id="content_body"
+            value={contentBody}
+            onChange={(e) => setContentBody(e.target.value)}
+            rows={10}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            required
+          />
+        </div>
 
         <div>
           <label htmlFor="due_date" className="block text-sm font-medium text-gray-700">

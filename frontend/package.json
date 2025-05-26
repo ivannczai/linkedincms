@@ -14,17 +14,21 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/material": "^7.1.0",
     "@tiptap/extension-link": "^2.11.7",
     "@tiptap/react": "^2.11.7",
     "@tiptap/starter-kit": "^2.11.7",
-    "axios": "^1.5.0",
+    "@types/react-router-dom": "^5.3.3",
+    "axios": "^1.9.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.487.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^8.0.7",
-    "react-router-dom": "^6.16.0",
+    "react-router-dom": "^6.30.1",
     "react-simple-star-rating": "^5.1.7",
     "recharts": "^2.15.2"
   },

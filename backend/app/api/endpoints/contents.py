@@ -4,13 +4,14 @@ Content endpoints module.
 This module contains endpoints for content piece management.
 """
 from typing import Any, List, Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlmodel import Session
 
 # Import crud functions directly for clarity
-from app.crud import content as crud_content, client as crud_client, user as crud_user 
-from app.api.deps import get_current_admin_user, get_current_user, get_session
+from app.crud import content as crud_content, client as crud_client, user as crud_user, scheduled_post as crud_scheduled_post
+from app.api.deps import get_current_admin_user, get_current_user, get_current_client_user, get_session
 from app.models.content import (
     ContentPiece,
     ContentPieceCreate,
@@ -20,6 +21,7 @@ from app.models.content import (
 )
 from app.crud.content import ContentRatingInput
 from app.models.user import User, UserRole
+from app.models.scheduled_post import ScheduledLinkedInPostCreate, PostStatus
 
 router = APIRouter()
 
@@ -129,14 +131,43 @@ def update_content(
     """
     Update a content piece. (Admin only)
     """
-    # Use the correct CRUD function name
     content = crud_content.get(session, content_id) 
     if not content:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content piece not found")
 
-    # Use the correct CRUD function name
     content = crud_content.update(session=session, db_obj=content, obj_in=content_in) 
     return content
+
+
+@router.put("/client/{content_id}", response_model=ContentPieceRead)
+def update_content_client(
+    *,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_client_user),
+    content_id: int,
+    content_in: ContentPieceUpdate,
+) -> Any:
+    """
+    Update a content piece. (Client only)
+    """
+    import traceback
+    try:
+        content = crud_content.get(session, content_id)
+        if not content:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content piece not found")
+        
+        if content.client_id != current_user.client_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only edit your own content")
+        
+        if content.status == ContentStatus.PUBLISHED:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit published content")
+
+        content = crud_content.update(session=session, db_obj=content, obj_in=content_in)
+        return content
+    except Exception as e:
+        print('--- update_content_client error ---')
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.delete("/{content_id}", response_model=ContentPieceRead)
@@ -333,3 +364,80 @@ def rate_content_endpoint(
     except Exception as e:
         print(f"Unexpected error rating content: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+
+@router.post("/{content_id}/schedule", response_model=ContentPieceRead)
+def schedule_content(
+    *,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user), # Client action
+    content_id: int,
+    scheduled_at: str = Body(..., embed=True),
+) -> Any:
+    """
+    Schedule a content piece for publication. (Client only)
+    """
+    if current_user.role != UserRole.CLIENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only client users can schedule content")
+
+    content = crud_content.get(session, content_id)
+    if not content:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content piece not found")
+
+    client_profile = crud_client.get_by_user_id(session, user_id=current_user.id)
+    if not client_profile or content.client_id != client_profile.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+    if content.status != ContentStatus.APPROVED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Content must be approved to be scheduled")
+
+    # Convert scheduled_at string to datetime
+    try:
+        # Parse the input datetime string and convert to UTC
+        scheduled_at_dt = datetime.fromisoformat(scheduled_at)
+        if scheduled_at_dt.tzinfo is None:
+            scheduled_at_dt = scheduled_at_dt.replace(tzinfo=timezone.utc)
+            
+        print(f"\nЗаплановано на (UTC): {scheduled_at_dt.isoformat()}")
+        print(f"Заплановано на (локальний): {scheduled_at_dt.astimezone().isoformat()}")
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SSZ)")
+
+    # Check if date is in the future
+    now = datetime.now(timezone.utc)
+    print(f"Поточний час (UTC): {now.isoformat()}")
+    print(f"Поточний час (локальний): {now.astimezone().isoformat()}")
+    
+    if scheduled_at_dt <= now:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scheduled time must be in the future")
+
+    # Create scheduled post record first
+    scheduled_post = crud_scheduled_post.create_scheduled_post(
+        session=session,
+        obj_in=ScheduledLinkedInPostCreate(
+            user_id=current_user.id,
+            content_id=content.id,
+            content_text=content.content_body,
+            scheduled_at=scheduled_at_dt,
+            status=PostStatus.PENDING
+        )
+    )
+    print(f"\nСтворено запланований пост ID: {scheduled_post.id}")
+    print(f"Статус: {scheduled_post.status}")
+    print(f"Заплановано на (UTC): {scheduled_post.scheduled_at.isoformat()}")
+    print(f"Заплановано на (локальний): {scheduled_post.scheduled_at.astimezone().isoformat()}")
+
+    # Update content status after successful post creation
+    content = crud_content.update(
+        session=session,
+        db_obj=content,
+        obj_in=ContentPieceUpdate(
+            status=ContentStatus.SCHEDULED,
+            scheduled_at=scheduled_at_dt
+        )
+    )
+    print(f"\nОновлено статус контенту ID: {content.id}")
+    print(f"Статус: {content.status}")
+    print(f"Заплановано на (UTC): {content.scheduled_at.isoformat() if content.scheduled_at else 'None'}")
+    print(f"Заплановано на (локальний): {content.scheduled_at.astimezone().isoformat() if content.scheduled_at else 'None'}")
+
+    return content

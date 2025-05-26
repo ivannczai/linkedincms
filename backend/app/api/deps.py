@@ -9,13 +9,14 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt
 from jose.exceptions import JWTError
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel
 from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.database import get_session
 from app.models.user import User, UserRole
 from app.schemas.token import TokenData, TokenPayload
+from app.crud import client as crud_client
 
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
@@ -133,3 +134,40 @@ def get_current_admin_user(
             detail="Not enough permissions",
         )
     return current_user
+
+
+class CurrentClientUser(BaseModel):
+    id: int
+    email: str
+    client_id: int
+    role: str
+    is_active: bool
+    full_name: str
+
+
+def get_current_client_user(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> CurrentClientUser:
+    """
+    Get the current client user with client_id.
+    """
+    if current_user.role != UserRole.CLIENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions",
+        )
+    client_profile = crud_client.get_by_user_id(session, user_id=current_user.id)
+    if not client_profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Client profile not found",
+        )
+    return CurrentClientUser(
+        id=current_user.id,
+        email=current_user.email,
+        client_id=client_profile.id,
+        role=current_user.role,
+        is_active=current_user.is_active,
+        full_name=current_user.full_name,
+    )

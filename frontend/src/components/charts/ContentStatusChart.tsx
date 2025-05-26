@@ -7,6 +7,7 @@ interface ContentStatusChartProps {
     pending: number;
     revision: number;
     approved: number;
+    scheduled: number;
     published: number;
     // Add draft if needed/available
   };
@@ -17,6 +18,7 @@ const COLORS = {
   [ContentStatus.PENDING_APPROVAL]: '#FBBF24', // amber-400
   [ContentStatus.REVISION_REQUESTED]: '#F87171', // red-400
   [ContentStatus.APPROVED]: '#34D399', // emerald-400
+  [ContentStatus.SCHEDULED]: '#A78BFA', // purple-400
   [ContentStatus.PUBLISHED]: '#60A5FA', // blue-400
   [ContentStatus.DRAFT]: '#9CA3AF', // gray-400 
 };
@@ -26,6 +28,7 @@ const ContentStatusChart: React.FC<ContentStatusChartProps> = ({ counts }) => {
     { name: 'Pending Approval', value: counts.pending, status: ContentStatus.PENDING_APPROVAL },
     { name: 'Revision Requested', value: counts.revision, status: ContentStatus.REVISION_REQUESTED },
     { name: 'Approved', value: counts.approved, status: ContentStatus.APPROVED },
+    { name: 'Scheduled', value: counts.scheduled, status: ContentStatus.SCHEDULED },
     { name: 'Published', value: counts.published, status: ContentStatus.PUBLISHED },
     // Add Draft if you track it separately
   ].filter(entry => entry.value > 0); // Only show statuses with count > 0

@@ -191,11 +191,11 @@ def mark_as_posted(session: Session, *, content_id: int) -> ContentPiece:
     if not db_obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content piece not found")
 
-    # Allow marking as posted only if approved or already published
-    if db_obj.status not in [ContentStatus.APPROVED, ContentStatus.PUBLISHED]:
+    # Allow marking as posted only if approved, scheduled or already published
+    if db_obj.status not in [ContentStatus.APPROVED, ContentStatus.SCHEDULED, ContentStatus.PUBLISHED]:
          raise HTTPException(
              status_code=status.HTTP_400_BAD_REQUEST,
-             detail="Content must be approved to be marked as posted."
+             detail="Content must be approved or scheduled to be marked as posted."
          )
 
     if db_obj.published_at is None:

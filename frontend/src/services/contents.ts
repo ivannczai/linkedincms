@@ -13,6 +13,7 @@ export interface Content {
   is_active: boolean;
   review_comment: string | null;
   published_at: string | null;
+  scheduled_at: string | null;
   client_rating?: number | null; // Add client_rating
   created_at: string;
   updated_at: string | null;
@@ -23,6 +24,7 @@ export enum ContentStatus {
   PENDING_APPROVAL = 'PENDING_APPROVAL',
   REVISION_REQUESTED = 'REVISION_REQUESTED',
   APPROVED = 'APPROVED',
+  SCHEDULED = 'SCHEDULED',
   PUBLISHED = 'PUBLISHED',
 }
 
@@ -44,6 +46,7 @@ export interface ContentUpdateInput {
   status?: ContentStatus;
   due_date?: string | null;
   is_active?: boolean;
+  scheduled_at?: string | null;
 }
 
 // Define allowed sort fields for type safety
@@ -117,6 +120,14 @@ const contentService = {
   update: async (id: number, data: ContentUpdateInput): Promise<Content> => {
     const response: AxiosResponse<Content> = await api.put(
       `/api/v1/contents/${id}`,
+      data
+    );
+    return response.data;
+  },
+
+  updateClient: async (id: number, data: ContentUpdateInput): Promise<Content> => {
+    const response: AxiosResponse<Content> = await api.put(
+      `/api/v1/contents/client/${id}`,
       data
     );
     return response.data;
@@ -210,6 +221,15 @@ const contentService = {
   },
 
   /**
+   * Get content pieces for a client that are scheduled
+   * @param clientId Client ID
+   * @returns Promise with content pieces
+   */
+  getScheduled: async (clientId: number): Promise<Content[]> => {
+    return contentService.getAll(clientId, ContentStatus.SCHEDULED, 'due_date', 'asc');
+  },
+
+  /**
    * Mark a content piece as posted (changes status to PUBLISHED)
    * @param id Content piece ID
    * @returns Promise with updated content piece
@@ -217,6 +237,20 @@ const contentService = {
   markAsPosted: async (id: number): Promise<Content> => {
     const response: AxiosResponse<Content> = await api.post(
       `/api/v1/contents/${id}/mark-as-posted`
+    );
+    return response.data;
+  },
+
+  /**
+   * Schedule a content piece for publication
+   * @param id Content piece ID
+   * @param scheduledAt Scheduled date and time
+   * @returns Promise with updated content piece
+   */
+  schedule: async (id: number, scheduledAt: string): Promise<Content> => {
+    const response: AxiosResponse<Content> = await api.post(
+      `/api/v1/contents/${id}/schedule`,
+      { scheduled_at: scheduledAt }
     );
     return response.data;
   },

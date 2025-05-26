@@ -208,6 +208,7 @@ const ClientContentViewPage: React.FC = () => {
 	const canTakeAction = content.status === ContentStatus.PENDING_APPROVAL;
 	const canMarkAsPosted =
 		content.status === ContentStatus.APPROVED && !content.published_at;
+	const canEdit = content.status !== ContentStatus.PUBLISHED;
 
 	return (
 		<div className='container mx-auto'>
@@ -222,12 +223,22 @@ const ClientContentViewPage: React.FC = () => {
 					</button>
 				)}
 				{!strategy && <div></div>} {/* Spacer if no strategy */}
-				<button
-					onClick={() => navigate('/client/library')}
-					className='btn btn-secondary'
-				>
-					<ArrowLeft className='mr-2 h-4 w-4' /> Back to Library
-				</button>
+				<div className="flex gap-2">
+					{canEdit && (
+						<button
+							onClick={() => navigate(`/client/contents/${content.id}/edit`)}
+							className='btn btn-primary'
+						>
+							Edit Content
+						</button>
+					)}
+					<button
+						onClick={() => navigate('/client/library')}
+						className='btn btn-secondary'
+					>
+						<ArrowLeft className='mr-2 h-4 w-4' /> Back to Library
+					</button>
+				</div>
 			</div>
 
 			{/* Navigation and Action Buttons (Sticky Header) */}
@@ -250,6 +261,7 @@ const ClientContentViewPage: React.FC = () => {
 								onClick={handleApproveClick}
 								disabled={isSubmitting}
 								className='btn btn-success'
+								style={{ background: 'lightgreen' }}
 							>
 								{isSubmitting ? 'Processing...' : 'Approve Content'}
 							</button>
@@ -313,13 +325,19 @@ const ClientContentViewPage: React.FC = () => {
 
 			{/* "Mark as Posted" Button */}
 			{canMarkAsPosted && (
-				<div className='mt-6 flex justify-end'>
+				<div className='mt-6 flex justify-end gap-2'>
 					<button
 						onClick={handleMarkAsPosted}
 						disabled={isSubmitting}
 						className='btn btn-secondary'
 					>
 						{isSubmitting ? 'Posting...' : 'Post to LinkedIn'}
+					</button>
+					<button
+						onClick={() => navigate(`/client/contents/${content.id}/edit?schedule=true`)}
+						className='btn btn-primary'
+					>
+						Schedule post
 					</button>
 				</div>
 			)}

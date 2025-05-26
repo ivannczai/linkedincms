@@ -31,8 +31,8 @@ const ContentsList: React.FC<ContentsListProps> = ({
       setContents(data);
       setError(null);
     } catch (err) {
+      console.error('Failed to load content pieces:', err);
       setError('Failed to load content pieces');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -88,6 +88,7 @@ const ContentsList: React.FC<ContentsListProps> = ({
       case ContentStatus.PENDING_APPROVAL: return 'bg-yellow-100 text-yellow-700';
       case ContentStatus.REVISION_REQUESTED: return 'bg-red-100 text-red-700';
       case ContentStatus.APPROVED: return 'bg-green-100 text-green-700';
+      case ContentStatus.SCHEDULED: return 'bg-purple-100 text-purple-700';
       case ContentStatus.PUBLISHED: return 'bg-blue-100 text-blue-700';
       default: return 'bg-gray-100 text-gray-600';
     }
@@ -102,7 +103,7 @@ const ContentsList: React.FC<ContentsListProps> = ({
   }
 
   if (contents.length === 0) {
-    return <div className="text-gray-500 p-4 text-center">No content pieces found matching the criteria.</div>;
+    return <div className="text-gray-500 p-4 text-center">No content pieces found matching the current filter.</div>;
   }
 
   return (

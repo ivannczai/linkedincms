@@ -79,12 +79,13 @@ const ClientDashboard: React.FC = () => {
 
   // Calculate counts and previews from the fetched content
   const contentCounts = React.useMemo(() => {
-    const counts = { pending: 0, revision: 0, approved: 0, published: 0 };
+    const counts = { pending: 0, revision: 0, approved: 0, published: 0, scheduled: 0 };
     allContents.forEach(content => {
       if (content.status === ContentStatus.PENDING_APPROVAL) counts.pending++;
       else if (content.status === ContentStatus.REVISION_REQUESTED) counts.revision++;
       else if (content.status === ContentStatus.APPROVED) counts.approved++;
       else if (content.status === ContentStatus.PUBLISHED) counts.published++;
+      else if (content.status === ContentStatus.SCHEDULED) counts.scheduled++;
     });
     return counts;
   }, [allContents]);
@@ -214,7 +215,7 @@ const ClientDashboard: React.FC = () => {
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">Content Overview</h3>
                  {errorContent && <p className="text-red-500 text-sm">{errorContent}</p>}
                  {!errorContent && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                         <Link to={`/client/library?status=${ContentStatus.PENDING_APPROVAL}`} className="text-center p-3 bg-yellow-100 rounded-md hover:bg-yellow-200 transition-colors">
                            <div className="font-bold text-xl text-yellow-800">{contentCounts.pending}</div>
                            <div className="text-yellow-700">Pending Approval</div>
@@ -229,6 +230,10 @@ const ClientDashboard: React.FC = () => {
                          <Link to={`/client/library?status=${ContentStatus.APPROVED}`} className="text-center p-3 bg-green-100 rounded-md hover:bg-green-200 transition-colors">
                            <div className="font-bold text-xl text-green-800">{contentCounts.approved}</div>
                            <div className="text-green-700">Approved</div>
+                        </Link>
+                         <Link to={`/client/library?status=${ContentStatus.SCHEDULED}`} className="text-center p-3 bg-purple-100 rounded-md hover:bg-purple-200 transition-colors">
+                           <div className="font-bold text-xl text-purple-800">{contentCounts.scheduled}</div>
+                           <div className="text-purple-700">Scheduled</div>
                         </Link>
                          <Link to={`/client/library?status=${ContentStatus.PUBLISHED}`} className="text-center p-3 bg-blue-100 rounded-md hover:bg-blue-200 transition-colors">
                            <div className="font-bold text-xl text-blue-800">{contentCounts.published}</div>

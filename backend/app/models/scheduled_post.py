@@ -1,7 +1,7 @@
 """
 Scheduled LinkedIn Post model module.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -28,6 +28,7 @@ class ScheduledLinkedInPostBase(SQLModel):
     Base model for ScheduledLinkedInPost with common fields.
     """
     user_id: int = Field(foreign_key="user.id", index=True)
+    content_id: Optional[int] = Field(default=None, foreign_key="contentpiece.id", index=True) # Link to content if exists
     # Correctly specify TEXT type using sa_type
     content_text: str = Field(sa_type=TEXT)
     scheduled_at: datetime = Field(index=True)
@@ -35,6 +36,14 @@ class ScheduledLinkedInPostBase(SQLModel):
     linkedin_post_id: Optional[str] = Field(default=None, index=True) # Store the ID returned by LinkedIn API
     error_message: Optional[str] = Field(default=None)
     retry_count: int = Field(default=0) # Added retry counter
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Convert scheduled_at to UTC if it has timezone info
+        if self.scheduled_at and self.scheduled_at.tzinfo is not None:
+            self.scheduled_at = self.scheduled_at.astimezone(timezone.utc)
+        elif self.scheduled_at:
+            self.scheduled_at = self.scheduled_at.replace(tzinfo=timezone.utc)
 
 
 class ScheduledLinkedInPost(BaseModel, ScheduledLinkedInPostBase, TimestampMixin, table=True):

@@ -36,6 +36,8 @@ const ContentCard: React.FC<ContentCardProps> = ({
 				return 'bg-red-100 text-red-700';
 			case ContentStatus.APPROVED:
 				return 'bg-green-100 text-green-700';
+			case ContentStatus.SCHEDULED:
+				return 'bg-purple-100 text-purple-700';
 			case ContentStatus.PUBLISHED:
 				return 'bg-blue-100 text-blue-700';
 			default:

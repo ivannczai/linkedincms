@@ -86,6 +86,7 @@ import CreateGlobalContentPage from './pages/admin/CreateGlobalContentPage';
 // Import client pages
 import ClientContentViewPage from './pages/client/ClientContentViewPage';
 import ClientContentLibraryPage from './pages/client/ClientContentLibraryPage';
+import ClientContentEditPage from './pages/client/ClientContentEditPage';
 
 // Root component with routes
 function App() {
@@ -125,6 +126,7 @@ function App() {
             <Route path="/client/dashboard" element={<Layout><ClientDashboard /></Layout>} />
             <Route path="/client/library" element={<Layout><ClientContentLibraryPage /></Layout>} />
             <Route path="/client/contents/:id" element={<Layout><ClientContentViewPage /></Layout>} />
+            <Route path="/client/contents/:id/edit" element={<Layout><ClientContentEditPage /></Layout>} />
              {/* Consider if /dashboard/settings and /dashboard/linkedin/schedule should also be explicitly listed here if needed */}
           </Route>
 
