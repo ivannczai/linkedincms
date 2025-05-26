@@ -60,7 +60,8 @@ describe('ContentForm', () => {
     due_date: '2025-05-01',
     is_active: true,
     review_comment: null,
-    published_at: null, // Add missing field
+    published_at: null,
+    scheduled_at: null,
     created_at: '2025-04-01T12:00:00Z',
     updated_at: null,
   };

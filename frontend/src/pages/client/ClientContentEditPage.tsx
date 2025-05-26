@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import contentService, { Content, ContentUpdateInput, ContentStatus } from '../../services/contents';
+import contentService, { Content, ContentUpdateInput } from '../../services/contents';
 import { ArrowLeft } from 'lucide-react';
 
 const ClientContentEditPage: React.FC = () => {

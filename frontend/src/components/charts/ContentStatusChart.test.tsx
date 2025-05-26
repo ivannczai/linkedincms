@@ -25,14 +25,14 @@ vi.mock('recharts', async () => {
 
 describe('ContentStatusChart', () => {
   it('renders "No data" message when all counts are zero', () => {
-    const zeroCounts = { pending: 0, revision: 0, approved: 0, published: 0 };
+    const zeroCounts = { pending: 0, revision: 0, approved: 0, scheduled: 0, published: 0 };
     render(<ContentStatusChart counts={zeroCounts} />);
     expect(screen.getByText(/No content data available for chart/i)).toBeInTheDocument();
     expect(screen.queryByTestId('responsive-container')).not.toBeInTheDocument();
   });
 
   it('renders the chart components when there is data', () => {
-    const someCounts = { pending: 1, revision: 2, approved: 3, published: 4 };
+    const someCounts = { pending: 1, revision: 2, approved: 3, scheduled: 2, published: 4 };
     render(<ContentStatusChart counts={someCounts} />);
     expect(screen.queryByText(/No content data available for chart/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('responsive-container')).toBeInTheDocument();
@@ -43,7 +43,7 @@ describe('ContentStatusChart', () => {
   });
 
   it('passes correctly formatted data to the Pie component', () => {
-     const someCounts = { pending: 1, revision: 2, approved: 3, published: 4 };
+     const someCounts = { pending: 1, revision: 2, approved: 3, scheduled: 2, published: 4 };
      render(<ContentStatusChart counts={someCounts} />);
      const pieElement = screen.getByTestId('pie');
      const pieData = JSON.parse(pieElement.getAttribute('data-props') || '[]');
@@ -60,7 +60,7 @@ describe('ContentStatusChart', () => {
   });
 
    it('filters out statuses with zero count from Pie data', () => {
-     const partialCounts = { pending: 0, revision: 2, approved: 3, published: 0 };
+     const partialCounts = { pending: 0, revision: 2, approved: 3, scheduled: 1, published: 0 };
      render(<ContentStatusChart counts={partialCounts} />);
      const pieElement = screen.getByTestId('pie');
      const pieData = JSON.parse(pieElement.getAttribute('data-props') || '[]');

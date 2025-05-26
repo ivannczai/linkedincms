@@ -24,6 +24,7 @@ const mockContent: Content = { // Add Content type annotation
   client_rating: 4.5,
   review_comment: null,
   published_at: null,
+  scheduled_at: null,
   is_active: true, // Add missing is_active property
 };
 
