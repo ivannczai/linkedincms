@@ -5,22 +5,22 @@ import { ContentStatus } from '../../services/contents';
 
 // Mock the recharts library
 vi.mock('recharts', async () => {
-  const actual = await vi.importActual('recharts') as object; // Cast actual to object
-  return {
-    ...actual, // Spread as object
-    ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="responsive-container">{children}</div>
-    ),
-    PieChart: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="pie-chart">{children}</div>
-    ),
-    Pie: ({ data }: { data: any[] }) => (
-      <div data-testid="pie" data-props={JSON.stringify(data)}>Pie</div>
-    ),
-    Cell: ({ fill }: { fill: string }) => <div data-testid="cell" data-fill={fill}></div>,
-    Tooltip: () => <div data-testid="tooltip">Tooltip</div>,
-    Legend: () => <div data-testid="legend">Legend</div>,
-  };
+    const actual = await vi.importActual('recharts') as object; // Cast actual to object
+    return {
+        ...actual, // Spread as object
+        ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
+            <div data-testid="responsive-container">{children}</div>
+        ),
+        PieChart: ({ children }: { children: React.ReactNode }) => (
+            <div data-testid="pie-chart">{children}</div>
+        ),
+        Pie: ({ data }: { data: any[] }) => (
+            <div data-testid="pie" data-props={JSON.stringify(data)}>Pie</div>
+        ),
+        Cell: ({ fill }: { fill: string }) => <div data-testid="cell" data-fill={fill}></div>,
+        Tooltip: () => <div data-testid="tooltip">Tooltip</div>,
+        Legend: () => <div data-testid="legend">Legend</div>,
+    };
 });
 
 describe('ContentStatusChart', () => {
@@ -80,6 +80,6 @@ describe('ContentStatusChart', () => {
      );
    });
 
-  // Note: Testing exact colors rendered by Cells within the mock is complex.
-  // We trust that recharts uses the 'fill' prop correctly.
+    // Note: Testing exact colors rendered by Cells within the mock is complex.
+    // We trust that recharts uses the 'fill' prop correctly.
 });

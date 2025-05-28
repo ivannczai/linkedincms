@@ -23,9 +23,12 @@ services:
 
   backend:
     image: linkedincms-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: linkedincms-backend
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/linkedincms
+      - DATABASE_URL=${DATABASE_URL}
     ports:
       - "8000:8000"
     depends_on:
@@ -38,9 +41,9 @@ services:
     image: postgres:15
     container_name: linkedincms-db
     environment:
-      POSTGRES_DB: linkedincms
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
