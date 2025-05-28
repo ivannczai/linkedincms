@@ -1,7 +1,7 @@
 """Initial schema based on current models
 
 Revision ID: 3eccd154b871
-Revises: 
+Revises:
 Create Date: 2025-04-08 19:13:32.977030
 
 """
@@ -83,7 +83,7 @@ def upgrade():
     sa.Column('idea', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('angle', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('content_body', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('status', sa.Enum('DRAFT', 'PENDING_APPROVAL', 'REVISION_REQUESTED', 'APPROVED', 'PUBLISHED', name='contentstatus'), nullable=False),
+    sa.Column('status', sa.Enum('DRAFT', 'PENDING_APPROVAL', 'REVISION_REQUESTED', 'APPROVED', 'PUBLISHED', 'SCHEDULED', name='contentstatus'), nullable=False),
     sa.Column('due_date', sa.Date(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('id', sa.Integer(), nullable=False),
