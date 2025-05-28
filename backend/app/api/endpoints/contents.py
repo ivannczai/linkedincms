@@ -392,20 +392,25 @@ def schedule_content(
 
     # Convert scheduled_at string to datetime
     try:
-        # Parse the input datetime string and convert to UTC
+        if scheduled_at.endswith('Z'):
+            scheduled_at = scheduled_at[:-1] + '+00:00'
+
+        if '.' in scheduled_at:
+            main_part, tz_part = scheduled_at.rsplit('+', 1)
+            main_part = main_part.split('.')[0]
+            scheduled_at = f"{main_part}+{tz_part}"
+
         scheduled_at_dt = datetime.fromisoformat(scheduled_at)
-        if scheduled_at_dt.tzinfo is None:
+        if scheduled_at_dt.tzinfo is not None:
+            scheduled_at_dt = scheduled_at_dt.astimezone(timezone.utc)
+        else:
             scheduled_at_dt = scheduled_at_dt.replace(tzinfo=timezone.utc)
             
-        print(f"\nЗаплановано на (UTC): {scheduled_at_dt.isoformat()}")
-        print(f"Заплановано на (локальний): {scheduled_at_dt.astimezone().isoformat()}")
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SSZ)")
 
     # Check if date is in the future
     now = datetime.now(timezone.utc)
-    print(f"Поточний час (UTC): {now.isoformat()}")
-    print(f"Поточний час (локальний): {now.astimezone().isoformat()}")
     
     if scheduled_at_dt <= now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scheduled time must be in the future")
@@ -421,10 +426,7 @@ def schedule_content(
             status=PostStatus.PENDING
         )
     )
-    print(f"\nСтворено запланований пост ID: {scheduled_post.id}")
-    print(f"Статус: {scheduled_post.status}")
-    print(f"Заплановано на (UTC): {scheduled_post.scheduled_at.isoformat()}")
-    print(f"Заплановано на (локальний): {scheduled_post.scheduled_at.astimezone().isoformat()}")
+    print(f"scheduled (local): {scheduled_post.scheduled_at.astimezone().isoformat()}")
 
     # Update content status after successful post creation
     content = crud_content.update(
@@ -435,9 +437,5 @@ def schedule_content(
             scheduled_at=scheduled_at_dt
         )
     )
-    print(f"\nОновлено статус контенту ID: {content.id}")
-    print(f"Статус: {content.status}")
-    print(f"Заплановано на (UTC): {content.scheduled_at.isoformat() if content.scheduled_at else 'None'}")
-    print(f"Заплановано на (локальний): {content.scheduled_at.astimezone().isoformat() if content.scheduled_at else 'None'}")
 
     return content

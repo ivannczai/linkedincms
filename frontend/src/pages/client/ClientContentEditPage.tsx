@@ -39,8 +39,13 @@ const ClientContentEditPage: React.FC = () => {
             content_body: data.content_body,
           });
           if (data.scheduled_at) {
-            setScheduleDate(data.scheduled_at);
+            const d = new Date(data.scheduled_at);
+            const localString = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            setScheduleDate(localString);
           }
+          // if (data.scheduled_at) {
+          //   setScheduleDate(data.scheduled_at);
+          // }
         }
       } catch (err) {
         console.error('Failed to fetch content:', err);
@@ -63,7 +68,14 @@ const ClientContentEditPage: React.FC = () => {
     try {
       if (isScheduleMode && scheduleDate) {
         const localDate = new Date(scheduleDate);
-        await contentService.schedule(content.id, localDate.toISOString());
+        if (isNaN(localDate.getTime())) {
+          throw new Error('Invalid date format');
+        }
+        if (localDate <= new Date()) {
+          throw new Error('Scheduled time must be in the future.');
+        }
+        const scheduledAtUTC = localDate.toISOString();
+        await contentService.schedule(content.id, scheduledAtUTC);
       } else {
         await contentService.updateClient(content.id, formData);
       }
@@ -97,6 +109,10 @@ const ClientContentEditPage: React.FC = () => {
       </div>
     );
   }
+  const now = new Date();
+  const pad = (n: number) => (n < 10 ? '0' + n : n);
+  const localMin = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -148,7 +164,7 @@ const ClientContentEditPage: React.FC = () => {
               onChange={(e) => setScheduleDate(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
               required={isScheduleMode}
-              min={new Date().toISOString().slice(0, 16)}
+              min={localMin}
             />
           </div>
         )}
@@ -190,4 +206,4 @@ const ClientContentEditPage: React.FC = () => {
   );
 };
 
-export default ClientContentEditPage; 
+export default ClientContentEditPage;
