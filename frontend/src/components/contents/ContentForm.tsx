@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Content, ContentCreateInput, ContentUpdateInput, ContentStatus } from '../../services/contents';
+import { Content, ContentStatus } from '../../services/contents';
 import contentService from '../../services/contents';
 import { useNavigate } from 'react-router-dom';
 import { ClientProfile } from '../../services/clients';
 import TipTapEditor from '../TipTapEditor';
-import api from '../../services/api';
 
 interface ContentFormProps {
   clientId?: number; // Provided when creating content for a specific client

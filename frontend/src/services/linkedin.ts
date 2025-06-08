@@ -15,7 +15,7 @@ const linkedinService = {
       }
     });
 
-    const { upload_url, asset } = registerResponse.data;
+    const { asset } = registerResponse.data;
 
     // Step 2: Upload file
     const formData = new FormData();
