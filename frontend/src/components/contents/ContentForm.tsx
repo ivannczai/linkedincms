@@ -3,6 +3,8 @@ import { Content, ContentCreateInput, ContentUpdateInput, ContentStatus } from '
 import contentService from '../../services/contents';
 import { useNavigate } from 'react-router-dom';
 import { ClientProfile } from '../../services/clients';
+import TipTapEditor from '../TipTapEditor';
+import api from '../../services/api';
 
 interface ContentFormProps {
   clientId?: number; // Provided when creating content for a specific client
@@ -33,26 +35,38 @@ const ContentForm: React.FC<ContentFormProps> = ({
   const [isActive, setIsActive] = useState(content?.is_active ?? true);
   const [status, setStatus] = useState<ContentStatus>(content?.status || ContentStatus.DRAFT);
   // Removed showPreview state
-  
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<string[]>(content?.attachments?.map(a => a.toString()) || []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (content) {
+      console.log('Content:', content);
+      console.log('Content attachments:', content.attachments);
       setTitle(content.title);
       setIdea(content.idea);
       setAngle(content.angle);
-      // Ensure existing content (potentially Markdown) is loaded,
-      // Tiptap will handle basic Markdown conversion on load if needed,
-      // but ideally, this should be HTML after migration.
-      // If content is empty, initialize with empty paragraph for Tiptap.
+      setExistingAttachments(content.attachments?.map(a => a.toString()) || []);
       setContentBody(content.content_body || '');
       setDueDate(content.due_date || '');
       setIsActive(content.is_active);
       setStatus(content.status);
     }
   }, [content]);
+
+  // const getImageUrl = (path: string) => {
+  //   return `http://localhost:8000/${path}`; // TODO: Change to the correct URL
+  // };
+  const getImageUrl = (path: string) => {
+    const isLocalhost = window.location.hostname === 'localhost';
+    const baseUrl = isLocalhost
+      ? 'http://localhost:8000'
+      : 'https://linkedin.rafinhafaria.com.br';
+    return `${baseUrl}/${path}`;
+  };
+  
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,56 +75,53 @@ const ContentForm: React.FC<ContentFormProps> = ({
     setSuccess(null);
 
     // Basic check if editor content is effectively empty (ignoring empty tags)
-    // This relies on Tiptap usually having at least <p></p>
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = contentBody;
     const isContentEmpty = tempDiv.textContent?.trim().length === 0;
 
     if (isContentEmpty) {
-        setError('Content Body cannot be empty.');
-        setLoading(false);
-        return;
+      setError('Content Body cannot be empty.');
+      setLoading(false);
+      return;
     }
 
-
     try {
-      // IMPORTANT: Backend needs to sanitize this HTML contentBody before saving!
-      const formData: ContentCreateInput | ContentUpdateInput = {
-        title,
-        idea,
-        angle,
-        content_body: contentBody, // Send HTML
-        is_active: isActive,
-      };
+      const formData = new FormData();
+      formData.append('title', title);
+      formData.append('idea', idea);
+      formData.append('angle', angle);
+      formData.append('content_body', contentBody);
+      formData.append('is_active', String(isActive));
+      formData.append('status', status);
+      const client_id = selectedClientId ?? content?.client_id;
+        if (!client_id) {
+          setError('Client ID is required.');
+          setLoading(false);
+          return;
+        }
+      formData.append('client_id', String(client_id));
+      // formData.append('client_id', String(selectedClientId || content?.client_id));
 
-      // Determine the client ID to use for creation
-      const finalClientId = isEdit ? content?.client_id : selectedClientId;
-
-      if (!isEdit && finalClientId) {
-        (formData as ContentCreateInput).client_id = finalClientId;
-      } else if (!isEdit && !finalClientId) {
-         setError('Please select a client.');
-         setLoading(false);
-          return; // Stop submission if client not selected in global create mode
-       }
- 
-       if (isEdit && content) {
-         formData.status = status;
-       }
+      attachments.forEach((file) => {
+        formData.append('attachments', file);
+      });
+      
+      existingAttachments.forEach((path) => {
+        formData.append('existing_attachments', path);
+      });
 
       let savedContent: Content;
       if (isEdit && content) {
-        savedContent = await contentService.update(content.id, formData as ContentUpdateInput);
+        savedContent = await contentService.update(content.id, formData as any);
         setSuccess('Content piece updated successfully');
       } else {
-        savedContent = await contentService.create(formData as ContentCreateInput);
+        savedContent = await contentService.create(formData as any);
         setSuccess('Content piece created successfully');
       }
 
       if (onSubmit) {
         onSubmit(savedContent);
       } else {
-        // Wait a bit to show the success message before navigating
         setTimeout(() => {
           navigate(`/admin/clients/${savedContent.client_id}/contents/${savedContent.id}`);
         }, 1500);
@@ -131,6 +142,14 @@ const ContentForm: React.FC<ContentFormProps> = ({
     }
   };
 
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveExistingAttachment = (index: number) => {
+    setExistingAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
       <h2 className="text-xl font-semibold mb-4">
@@ -148,6 +167,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
             value={selectedClientId || ''}
             onChange={(e) => setSelectedClientId(parseInt(e.target.value, 10))}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            style={{ padding: '5px 10px' }}
             required
           >
             <option value="" disabled>Select a client</option>
@@ -183,6 +203,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            style={{ padding: '5px 10px' }}
             required
           />
         </div>
@@ -197,6 +218,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
             value={idea}
             onChange={(e) => setIdea(e.target.value)}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            style={{ padding: '5px 10px' }}
             required
           />
         </div>
@@ -211,28 +233,112 @@ const ContentForm: React.FC<ContentFormProps> = ({
             value={angle}
             onChange={(e) => setAngle(e.target.value)}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            style={{ padding: '5px 10px' }}
             required
           />
         </div>
 
-        {/* Replace Markdown Editor/Preview with Rich Text Editor */}
+        {/* Content Body */}
         <div>
           <label htmlFor="content_body" className="block text-sm font-medium text-gray-700">
-            Content
+            Content Body
           </label>
-          <textarea
-            id="content_body"
-            value={contentBody}
-            onChange={(e) => setContentBody(e.target.value)}
-            rows={10}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            required
-          />
+          <div className="mt-1">
+            <TipTapEditor
+              content={contentBody}
+              onChange={setContentBody}
+              className="min-h-[200px] border border-gray-300 rounded-md"
+            />
+          </div>
+        </div>
+
+        {/* Attachments Preview */}
+        {existingAttachments && existingAttachments.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Attached Images</h3>
+            <div className="flex flex-wrap gap-2">
+              {existingAttachments.map((attachment, index) => (
+                <div key={index} className="relative w-[20%] aspect-square">
+                  <img
+                    src={getImageUrl(attachment)}
+                    alt={`Attachment ${index + 1}`}
+                    className="w-full h-full object-contain rounded-md"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveExistingAttachment(index)}
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Attachments Upload */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Attachments
+          </label>
+          <div className="mt-1">
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={(e) => {
+                if (e.target.files) {
+                  const files = Array.from(e.target.files);
+                  if (files.length > 9) {
+                    setError('You can only upload up to 9 files.');
+                    return;
+                  }
+                  setAttachments(files);
+                }
+              }}
+              className="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-md file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100"
+            />
+          </div>
+          
+          {/* New Attachments Preview */}
+          {attachments.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">New Images</h3>
+              <div className="flex flex-wrap gap-2">
+                {attachments.map((file, index) => (
+                  <div key={index} className="relative w-[20%] aspect-square">
+                    <div
+                      className="w-full h-full bg-gray-100 rounded-md overflow-hidden"
+                      style={{
+                        backgroundImage: `url(${URL.createObjectURL(file)})`,
+                        backgroundSize: 'contain',
+                        backgroundPosition: 'center',
+                        backgroundRepeat: 'no-repeat'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachment(index)}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div>
           <label htmlFor="due_date" className="block text-sm font-medium text-gray-700">
-            Due Date
+          Proposed posting date
           </label>
           <input
             type="date"
@@ -240,6 +346,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            style={{ padding: '5px 10px' }}
           />
         </div>
 
@@ -249,7 +356,8 @@ const ContentForm: React.FC<ContentFormProps> = ({
             id="is_active"
             checked={isActive}
             onChange={(e) => setIsActive(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="mt-1  rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            // style={{ padding: '5px 10px' }}
           />
           <label htmlFor="is_active" className="ml-2 block text-sm text-gray-700">
             Active
@@ -266,6 +374,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
               value={status}
               onChange={(e) => setStatus(e.target.value as ContentStatus)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              style={{ padding: '5px 10px' }}
             >
               {Object.values(ContentStatus).map((statusOption) => (
                 <option key={statusOption} value={statusOption}>

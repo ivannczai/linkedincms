@@ -7,6 +7,7 @@ import { useAuth } from './context/AuthContext';
 import Sidebar from './components/layout/Sidebar';
 // NavLink removed as it's unused here
 import { Menu } from 'lucide-react';
+import { Toaster } from 'react-hot-toast';
 
 // Import dashboard pages
 import AdminDashboardPage from './pages/admin/DashboardPage';
@@ -91,50 +92,53 @@ import ClientContentEditPage from './pages/client/ClientContentEditPage';
 // Root component with routes
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={<LoginPage />} />
+    <>
+      <Toaster position="top-right" />
+      <AuthProvider>
+        <Router>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<LoginPage />} />
 
-          {/* Protected routes (accessible by admin or client) */}
-          <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<RootRedirect />} />
-            {/* Add Settings route here, accessible by both roles */}
-            <Route path="/dashboard/settings" element={<Layout><SettingsPage /></Layout>} />
-            {/* Add LinkedIn Scheduler route here */}
-            <Route path="/dashboard/linkedin/schedule" element={<Layout><LinkedInSchedulerPage /></Layout>} />
-          </Route>
+            {/* Protected routes (accessible by admin or client) */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/" element={<RootRedirect />} />
+              {/* Add Settings route here, accessible by both roles */}
+              <Route path="/dashboard/settings" element={<Layout><SettingsPage /></Layout>} />
+              {/* Add LinkedIn Scheduler route here */}
+              <Route path="/dashboard/linkedin/schedule" element={<Layout><LinkedInSchedulerPage /></Layout>} />
+            </Route>
 
-          {/* Admin routes */}
-          <Route element={<ProtectedRoute requiredRole="admin" />}>
-            <Route path="/admin/dashboard" element={<Layout><AdminDashboardPage /></Layout>} />
-            <Route path="/admin/content" element={<Layout><AllContentPage /></Layout>} />
-            <Route path="/admin/content/new" element={<Layout><CreateGlobalContentPage /></Layout>} />
-            <Route path="/admin/clients" element={<Layout><ClientsPage /></Layout>} />
-            <Route path="/admin/clients/new" element={<Layout><CreateClientPage /></Layout>} />
-            <Route path="/admin/clients/:clientId" element={<Layout><ClientDetailPage /></Layout>} />
-            <Route path="/admin/clients/:id/edit" element={<Layout><EditClientPage /></Layout>} />
-            <Route path="/admin/clients/:clientId/contents/new" element={<Layout><CreateContentPage /></Layout>} />
-            <Route path="/admin/clients/:clientId/contents/:contentId" element={<Layout><ContentViewPage /></Layout>} />
-            <Route path="/admin/clients/:clientId/contents/:contentId/edit" element={<Layout><EditContentPage /></Layout>} />
-            {/* Consider if /dashboard/settings and /dashboard/linkedin/schedule should also be explicitly listed here if needed */}
-          </Route>
+            {/* Admin routes */}
+            <Route element={<ProtectedRoute requiredRole="admin" />}>
+              <Route path="/admin/dashboard" element={<Layout><AdminDashboardPage /></Layout>} />
+              <Route path="/admin/content" element={<Layout><AllContentPage /></Layout>} />
+              <Route path="/admin/content/new" element={<Layout><CreateGlobalContentPage /></Layout>} />
+              <Route path="/admin/clients" element={<Layout><ClientsPage /></Layout>} />
+              <Route path="/admin/clients/new" element={<Layout><CreateClientPage /></Layout>} />
+              <Route path="/admin/clients/:clientId" element={<Layout><ClientDetailPage /></Layout>} />
+              <Route path="/admin/clients/:id/edit" element={<Layout><EditClientPage /></Layout>} />
+              <Route path="/admin/clients/:clientId/contents/new" element={<Layout><CreateContentPage /></Layout>} />
+              <Route path="/admin/clients/:clientId/contents/:contentId" element={<Layout><ContentViewPage /></Layout>} />
+              <Route path="/admin/clients/:clientId/contents/:contentId/edit" element={<Layout><EditContentPage /></Layout>} />
+              {/* Consider if /dashboard/settings and /dashboard/linkedin/schedule should also be explicitly listed here if needed */}
+            </Route>
 
-          {/* Client routes */}
-          <Route element={<ProtectedRoute requiredRole="client" />}>
-            <Route path="/client/dashboard" element={<Layout><ClientDashboard /></Layout>} />
-            <Route path="/client/library" element={<Layout><ClientContentLibraryPage /></Layout>} />
-            <Route path="/client/contents/:id" element={<Layout><ClientContentViewPage /></Layout>} />
-            <Route path="/client/contents/:id/edit" element={<Layout><ClientContentEditPage /></Layout>} />
-             {/* Consider if /dashboard/settings and /dashboard/linkedin/schedule should also be explicitly listed here if needed */}
-          </Route>
+            {/* Client routes */}
+            <Route element={<ProtectedRoute requiredRole="client" />}>
+              <Route path="/client/dashboard" element={<Layout><ClientDashboard /></Layout>} />
+              <Route path="/client/library" element={<Layout><ClientContentLibraryPage /></Layout>} />
+              <Route path="/client/contents/:id" element={<Layout><ClientContentViewPage /></Layout>} />
+              <Route path="/client/contents/:id/edit" element={<Layout><ClientContentEditPage /></Layout>} />
+               {/* Consider if /dashboard/settings and /dashboard/linkedin/schedule should also be explicitly listed here if needed */}
+            </Route>
 
-          {/* Fallback route */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
+            {/* Fallback route */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </>
   );
 }
 

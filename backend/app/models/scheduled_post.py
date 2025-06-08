@@ -3,10 +3,11 @@ Scheduled LinkedIn Post model module.
 """
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from sqlmodel import Field, SQLModel, Relationship
-from sqlalchemy import TEXT # Import TEXT type
+from sqlalchemy import TEXT, Column
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.models.base import BaseModel, TimestampMixin
 # Import User model for relationship typing, avoid circular import if needed
@@ -36,6 +37,7 @@ class ScheduledLinkedInPostBase(SQLModel):
     linkedin_post_id: Optional[str] = Field(default=None, index=True) # Store the ID returned by LinkedIn API
     error_message: Optional[str] = Field(default=None)
     retry_count: int = Field(default=0) # Added retry counter
+    media_assets: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSONB)) # Store LinkedIn media asset objects
 
     def __init__(self, **data):
         super().__init__(**data)

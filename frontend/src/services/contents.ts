@@ -17,6 +17,8 @@ export interface Content {
   client_rating?: number | null; // Add client_rating
   created_at: string;
   updated_at: string | null;
+  attachments?: string[];
+  media_assets?: string[];
 }
 
 export enum ContentStatus {
@@ -36,6 +38,8 @@ export interface ContentCreateInput {
   content_body: string; // Send HTML
   due_date?: string;
   is_active?: boolean;
+  attachments?: string[];
+  media_assets?: string[];
 }
 
 export interface ContentUpdateInput {
@@ -47,6 +51,8 @@ export interface ContentUpdateInput {
   due_date?: string | null;
   is_active?: boolean;
   scheduled_at?: string | null;
+  attachments?: string[];
+  media_assets?: string[];
 }
 
 // Define allowed sort fields for type safety
@@ -98,6 +104,7 @@ const contentService = {
    */
   getById: async (id: number): Promise<Content> => {
     const response: AxiosResponse<Content> = await api.get(`/api/v1/contents/${id}`);
+    console.log('API Response:', response.data);
     return response.data;
   },
 
@@ -106,8 +113,16 @@ const contentService = {
    * @param data Content piece data
    * @returns Promise with created content piece
    */
-  create: async (data: ContentCreateInput): Promise<Content> => {
-    const response: AxiosResponse<Content> = await api.post('/api/v1/contents/', data);
+  create: async (data: FormData): Promise<Content> => {
+    const response: AxiosResponse<Content> = await api.post(
+      '/api/v1/contents/',
+      data,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
     return response.data;
   },
 
@@ -117,18 +132,28 @@ const contentService = {
    * @param data Content piece data to update
    * @returns Promise with updated content piece
    */
-  update: async (id: number, data: ContentUpdateInput): Promise<Content> => {
+  update: async (id: number, data: FormData): Promise<Content> => {
     const response: AxiosResponse<Content> = await api.put(
       `/api/v1/contents/${id}`,
-      data
+      data,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
     );
     return response.data;
   },
 
-  updateClient: async (id: number, data: ContentUpdateInput): Promise<Content> => {
+  updateClient: async (id: number, data: FormData): Promise<Content> => {
     const response: AxiosResponse<Content> = await api.put(
       `/api/v1/contents/client/${id}`,
-      data
+      data,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
     );
     return response.data;
   },
@@ -264,7 +289,14 @@ const contentService = {
   rate: async (id: number, rating: number): Promise<Content> => {
     const response: AxiosResponse<Content> = await api.post(
       `/api/v1/contents/${id}/rate`,
-      { rating } // Send rating in the request body
+      { rating }
+    );
+    return response.data;
+  },
+
+  postNow: async (id: number): Promise<Content> => {
+    const response: AxiosResponse<Content> = await api.post(
+      `/api/v1/contents/${id}/post-now`
     );
     return response.data;
   },

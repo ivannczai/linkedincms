@@ -36,7 +36,8 @@ services:
     networks:
       - app-network
     restart: unless-stopped
-
+    volumes:
+      - ./uploads:/app/uploads
   db:
     image: postgres:15
     container_name: linkedincms-db
@@ -54,6 +55,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+   
 
 networks:
   app-network:

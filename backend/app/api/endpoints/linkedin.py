@@ -6,7 +6,7 @@ from typing import List, Optional
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, File, UploadFile, Body
 from fastapi.responses import RedirectResponse
 import requests
 from sqlmodel import Session
@@ -25,6 +25,7 @@ from app.models.scheduled_post import ( # Import scheduled post models
 )
 from app.core.security import decrypt_data # Import decrypt_data
 from app.crud.scheduled_post import PostDeletionError # Import PostDeletionError
+from app.utils.file_utils import save_upload_file
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ async def initiate_linkedin_connection(
     logger.info(f"Stored state for user ID {current_user.id}")
 
     # Define required scopes
-    scopes = ["openid", "profile", "email", "w_member_social"]
+    scopes = ["openid", "profile", "email", "w_member_social", "r_liteprofile"]
     logger.info(f"Using scopes: {scopes}")
 
     auth_url_params = {
@@ -131,9 +132,14 @@ async def linkedin_connection_callback(
         expires_in = token_data.get("expires_in") # Typically 3600 seconds (1 hour) or 5184000 (60 days)
         scopes_string = token_data.get("scope", "") # e.g., "openid profile email w_member_social"
         logger.info(f"Received scopes from LinkedIn token exchange: {scopes_string}")
+        logger.info(f"Token expires in: {expires_in} seconds")
 
         if not access_token:
             raise ValueError("Access token not found in LinkedIn response.")
+
+        # Calculate expiry time
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        logger.info(f"Token will expire at: {expires_at.isoformat()}")
 
     except requests.exceptions.RequestException as e:
         error_detail = str(e)
@@ -164,9 +170,6 @@ async def linkedin_connection_callback(
         logger.error(f"Error processing LinkedIn userinfo response: {e}")
         return _redirect_to_frontend({"linkedin_status": "error", "detail": f"Userinfo processing error: {e}"})
 
-
-    # Calculate expiry time
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in) if expires_in else None
 
     # Store LinkedIn details for the user
     try:
@@ -369,4 +372,251 @@ async def disconnect_linkedin(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to disconnect LinkedIn account: {str(e)}"
+        )
+
+@router.post("/assets", response_model=List[str])
+async def upload_assets(
+    *,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(deps.get_current_user),
+    files: List[UploadFile] = File(...),
+) -> List[str]:
+    """Upload assets for LinkedIn posts."""
+    uploaded_paths = []
+    
+    for file in files:
+        try:
+            # Generate unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{timestamp}_{file.filename}"
+            file_path = f"uploads/{filename}"
+            
+            # Save file
+            await save_upload_file(file, file_path)
+            uploaded_paths.append(file_path)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Error uploading file {file.filename}: {str(e)}"
+            )
+    
+    return uploaded_paths
+
+@router.post("/assets/register", response_model=dict)
+async def register_upload(
+    *,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_user),
+    file_type: str = Query(..., description="MIME type of the file"),
+    file_size: int = Query(..., description="Size of the file in bytes"),
+):
+    """Register a file upload with LinkedIn."""
+    try:
+        logger.info(f"Starting file registration for user {current_user.id}, type: {file_type}, size: {file_size}")
+        
+        # Get LinkedIn access token
+        if not current_user.linkedin_access_token:
+            logger.error(f"LinkedIn account not connected for user {current_user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LinkedIn account not connected"
+            )
+
+        access_token = decrypt_data(current_user.linkedin_access_token)
+        logger.info(f"Got access token for user {current_user.id}")
+        
+        # Register upload with LinkedIn
+        register_url = "https://api.linkedin.com/v2/assets?action=registerUpload"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "X-Restli-Protocol-Version": "2.0.0"
+        }
+        
+        data = {
+            "registerUploadRequest": {
+                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                "owner": f"urn:li:person:{current_user.linkedin_id}",
+                "serviceRelationships": [
+                    {
+                        "relationshipType": "OWNER",
+                        "identifier": "urn:li:userGeneratedContent"
+                    }
+                ]
+            }
+        }
+        
+        logger.info(f"Sending registration request to LinkedIn for user {current_user.id}")
+        logger.debug(f"Request data: {data}")
+        
+        response = requests.post(register_url, headers=headers, json=data)
+        response.raise_for_status()
+        
+        upload_info = response.json()
+        logger.info(f"Got upload info from LinkedIn for user {current_user.id}")
+        logger.debug(f"Upload info: {upload_info}")
+        
+        result = {
+            "upload_url": upload_info["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"],
+            "asset": upload_info["value"]["asset"]
+        }
+        logger.info(f"Returning upload info for user {current_user.id}")
+        return result
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"LinkedIn API error for user {current_user.id}: {str(e)}")
+        logger.error(f"Response content: {e.response.content if hasattr(e, 'response') else 'No response content'}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"LinkedIn API error: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}"
+        )
+
+@router.post("/assets/upload/{asset_id}", response_model=dict)
+async def upload_asset(
+    *,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_user),
+    asset_id: str,
+    file: UploadFile = File(...),
+):
+    """Upload a file to LinkedIn."""
+    try:
+        logger.info(f"Starting file upload for user {current_user.id}, asset: {asset_id}")
+        
+        # Get LinkedIn access token
+        if not current_user.linkedin_access_token:
+            logger.error(f"LinkedIn account not connected for user {current_user.id}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LinkedIn account not connected"
+            )
+
+        access_token = decrypt_data(current_user.linkedin_access_token)
+        logger.info(f"Got access token for user {current_user.id}")
+        
+        # Get upload URL from previous registration
+        register_url = "https://api.linkedin.com/v2/assets?action=registerUpload"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "X-Restli-Protocol-Version": "2.0.0"
+        }
+        
+        data = {
+            "registerUploadRequest": {
+                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                "owner": f"urn:li:person:{current_user.linkedin_id}",
+                "serviceRelationships": [
+                    {
+                        "relationshipType": "OWNER",
+                        "identifier": "urn:li:userGeneratedContent"
+                    }
+                ]
+            }
+        }
+        
+        logger.info(f"Getting upload URL for user {current_user.id}")
+        response = requests.post(register_url, headers=headers, json=data)
+        response.raise_for_status()
+        upload_info = response.json()
+        upload_url = upload_info["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
+        logger.info(f"Got upload URL for user {current_user.id}")
+        
+        # Upload file to LinkedIn
+        upload_headers = {
+            "Content-Type": file.content_type
+        }
+        
+        file_content = await file.read()
+        logger.info(f"Uploading file to LinkedIn for user {current_user.id}")
+        upload_response = requests.put(upload_url, headers=upload_headers, data=file_content)
+        upload_response.raise_for_status()
+        logger.info(f"File uploaded successfully for user {current_user.id}")
+        
+        return {
+            "asset": f"urn:li:digitalmediaAsset:{asset_id}",
+            "status": "READY"
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"LinkedIn API error for user {current_user.id}: {str(e)}")
+        logger.error(f"Response content: {e.response.content if hasattr(e, 'response') else 'No response content'}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"LinkedIn API error: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}"
+        )
+
+@router.post("/posts", response_model=dict)
+async def create_post(
+    *,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(deps.get_current_active_user),
+    content: str = Body(...),
+    media_assets: List[str] = Body(default=[]),
+):
+    """Create a LinkedIn post with media."""
+    try:
+        # Get LinkedIn access token
+        if not current_user.linkedin_access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LinkedIn account not connected"
+            )
+
+        access_token = decrypt_data(current_user.linkedin_access_token)
+        
+        # Create post
+        url = "https://api.linkedin.com/v2/ugcPosts"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "X-Restli-Protocol-Version": "2.0.0"
+        }
+        
+        payload = {
+            "author": f"urn:li:person:{current_user.linkedin_id}",
+            "lifecycleState": "PUBLISHED",
+            "specificContent": {
+                "com.linkedin.ugc.ShareContent": {
+                    "shareCommentary": {
+                        "text": content
+                    },
+                    "shareMediaCategory": "IMAGE",
+                    "media": [
+                        {
+                            "status": "READY",
+                            "description": {"text": "Image"},
+                            "media": asset,
+                            "title": {"text": "Image"}
+                        } for asset in media_assets
+                    ]
+                }
+            },
+            "visibility": {
+                "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+            }
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        
+        return response.json()
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"LinkedIn API error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"LinkedIn API error: {str(e)}"
         )

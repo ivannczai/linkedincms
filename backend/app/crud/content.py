@@ -6,6 +6,10 @@ This module contains CRUD operations for the ContentPiece model.
 from typing import List, Optional, Union, Dict, Any
 from datetime import datetime
 import bleach # Import bleach for sanitization
+import os
+import logging
+from fastapi import UploadFile
+import json
 
 from sqlmodel import Session, select, SQLModel # Import SQLModel
 from sqlalchemy import desc, asc # Import asc and desc for sorting
@@ -14,6 +18,9 @@ from pydantic import validator, Field
 
 from app.models.content import ContentPiece, ContentPieceCreate, ContentPieceUpdate, ContentStatus
 from app.models.user import User, UserRole # Import User for permission checks
+from app.crud.base import CRUDBase
+from app.utils.file_utils import save_upload_file
+from app.services.linkedin import upload_to_linkedin
 
 # --- Bleach Configuration ---
 # Define allowed HTML tags and attributes suitable for basic rich text
@@ -25,6 +32,153 @@ ALLOWED_ATTRIBUTES = {
 }
 # --------------------------
 
+logger = logging.getLogger(__name__)
+
+class CRUDContent(CRUDBase[ContentPiece, ContentPieceCreate, ContentPieceUpdate]):
+    async def create(
+        self,
+        *,
+        session: Session,
+        obj_in: ContentPieceCreate,
+        attachments: Optional[List[UploadFile]] = None
+    ) -> ContentPiece:
+        """Create new content piece with optional attachments."""
+        db_obj = ContentPiece.from_orm(obj_in)
+        
+        # Save attachments if provided
+        if attachments:
+            attachment_paths = []
+            for file in attachments:
+                try:
+                    # Generate unique filename
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{timestamp}_{file.filename}"
+                    file_path = f"uploads/{filename}"
+                    
+                    # Save file
+                    await save_upload_file(file, file_path)
+                    attachment_paths.append(file_path)
+                except Exception as e:
+                    logger.error(f"Error saving attachment {file.filename}: {str(e)}")
+                    continue
+            
+            if attachment_paths:
+                db_obj.attachments = attachment_paths
+            else:
+                db_obj.attachments = None
+
+        session.add(db_obj)
+        session.commit()
+        session.refresh(db_obj)
+        return db_obj
+
+    async def update(
+        self,
+        db: Session,
+        *,
+        db_obj: ContentPiece,
+        obj_in: ContentPieceUpdate,
+        user: Optional[User] = None,
+        attachments: Optional[List[UploadFile]] = None,
+        existing_attachments: Optional[List[str]] = None
+    ) -> ContentPiece:
+        """Update a content piece."""
+        update_data = obj_in.dict(exclude_unset=True)
+        
+        # Обробка файлів
+        if attachments or existing_attachments:
+            attachment_paths = []
+            
+            # Додаємо існуючі файли
+            if existing_attachments:
+                attachment_paths.extend(existing_attachments)
+                
+            # Додаємо нові файли
+            if attachments:
+                for file in attachments:
+                    try:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"{timestamp}_{file.filename}"
+                        file_path = f"uploads/{filename}"
+                        
+                        # Зберігаємо файл
+                        await save_upload_file(file, file_path)
+                        attachment_paths.append(file_path)
+                    except Exception as e:
+                        logger.error(f"Error saving attachment {file.filename}: {str(e)}")
+                        continue
+            
+            if attachment_paths:
+                db_obj.attachments = attachment_paths
+            else:
+                db_obj.attachments = None
+        
+        # Перевірка статусу та завантаження в LinkedIn
+        if "status" in update_data and update_data["status"] in [ContentStatus.SCHEDULED, ContentStatus.PUBLISHED]:
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="User is required for LinkedIn upload"
+                )
+            
+            if not db_obj.linkedin_media_assets and db_obj.attachments:
+                try:
+                    media_assets = []
+                    
+                    for attachment in db_obj.attachments:
+                        try:
+                            upload_info = await linkedinService.register_upload(
+                                access_token=user.linkedin_access_token,
+                                user_id=user.linkedin_id,
+                                file_type="image/jpeg",  # TODO: визначити тип файлу
+                                file_size=os.path.getsize(attachment)
+                            )
+                            
+                            await linkedinService.upload_file(
+                                upload_url=upload_info["uploadUrl"],
+                                file_path=attachment
+                            )
+                            
+                            media_assets.append(upload_info["asset"])
+                        except Exception as e:
+                            logger.error(f"Failed to upload {attachment} to LinkedIn: {str(e)}")
+                            continue
+                    
+                    if media_assets:
+                        db_obj.linkedin_media_assets = media_assets
+                    else:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Failed to upload any files to LinkedIn"
+                        )
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Failed to process LinkedIn uploads: {str(e)}"
+                    )
+        
+        for field, value in update_data.items():
+            if field != "attachments":  # Skip attachments, we already processed them
+                setattr(db_obj, field, value)
+        
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def get_by_client(
+        self, session: Session, *, client_id: int, skip: int = 0, limit: int = 100
+    ) -> List[ContentPiece]:
+        """Get all content pieces for a client."""
+        statement = select(ContentPiece).where(
+            ContentPiece.client_id == client_id
+        ).offset(skip).limit(limit)
+        return session.exec(statement).all()
+
+content = CRUDContent(ContentPiece)
+
+# Export the update function
+update = content.update
 
 def sanitize_html(html_content: Optional[str]) -> Optional[str]:
     """Sanitizes HTML content using bleach."""
@@ -107,37 +261,6 @@ def create(session: Session, *, obj_in: ContentPieceCreate) -> ContentPiece:
     return db_obj
 
 
-def update(
-    session: Session,
-    *,
-    db_obj: ContentPiece,
-    obj_in: Union[ContentPieceUpdate, Dict[str, Any]]
-) -> ContentPiece:
-    """
-    Update a content piece, sanitizing HTML content if provided.
-    """
-    if isinstance(obj_in, dict):
-        update_data = obj_in
-    else:
-        # Use exclude_unset=True to only update provided fields
-        update_data = obj_in.dict(exclude_unset=True)
-
-    # Sanitize content_body if it's being updated
-    if 'content_body' in update_data:
-        update_data['content_body'] = sanitize_html(update_data['content_body'])
-
-    for field, value in update_data.items():
-        setattr(db_obj, field, value)
-
-    # Ensure updated_at is set
-    db_obj.updated_at = datetime.utcnow()
-
-    session.add(db_obj)
-    session.commit()
-    session.refresh(db_obj)
-    return db_obj
-
-
 def delete(session: Session, *, content_id: int) -> Optional[ContentPiece]:
     """
     Delete a content piece.
@@ -154,7 +277,8 @@ def update_status(
     *,
     content_id: int,
     new_status: ContentStatus,
-    review_comment: Optional[str] = None
+    review_comment: Optional[str] = None,
+    scheduled_at: Optional[datetime] = None
 ) -> ContentPiece:
     """
     Update the status of a content piece.
@@ -175,6 +299,10 @@ def update_status(
     # Set published_at timestamp if status is PUBLISHED
     if new_status == ContentStatus.PUBLISHED and db_obj.published_at is None:
         db_obj.published_at = datetime.utcnow()
+
+    # Set scheduled_at if provided
+    if scheduled_at is not None:
+        db_obj.scheduled_at = scheduled_at
 
     db_obj.updated_at = datetime.utcnow()
     session.add(db_obj)

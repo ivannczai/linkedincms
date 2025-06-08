@@ -5,6 +5,8 @@ import logging
 import time # Import time for sleep
 from contextlib import asynccontextmanager # Import asynccontextmanager for lifespan
 from datetime import datetime, timezone, timedelta # Import timedelta
+import os # Import os for directory creation
+import re
 
 from fastapi import FastAPI, Depends, Request # Import Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +15,7 @@ from starlette.responses import Response # Import Response
 from sqlmodel import Session, select
 from apscheduler.schedulers.background import BackgroundScheduler # Import scheduler
 import requests # Import requests for publishing job
+from fastapi.staticfiles import StaticFiles # Import StaticFiles
 
 from app.api.api import api_router
 from app.core.config import settings # Import settings
@@ -115,19 +118,28 @@ def publish_scheduled_linkedin_posts():
                     logger.info(f"Scheduler: User ID {user.id} has scopes: {scopes_list}")
 
                 if "w_member_social" not in scopes_list:
-                    logger.warning(f"Scheduler: Missing 'w_member_social' scope for user ID {user.id}, post ID {post.id}. Failing permanently. Granted: '{user.linkedin_scopes}'")
+                    logger.warning(f"Scheduler: Missing 'w_member_social' scope for user ID {user.id}, post ID {post.id}. Granted: '{user.linkedin_scopes}'")
                     crud.scheduled_post.update_post_status(
                         session=session, db_obj=post, status=PostStatus.FAILED, error_message=error_message_prefix + "Missing required scope 'w_member_social'"
                     )
                     continue
 
-                # --- Call LinkedIn API to publish ---
+                # Construct post payload
+                formatted_content = re.sub(r'<p>(.*?)</p>', r'\1\n', post.content_text)
+                formatted_content = re.sub(r'<[^>]+>', '', formatted_content)
+                formatted_content = re.sub(r'\n\s*\n', '\n\n', formatted_content).strip()
+
+                logger.info(f"Original content: {post.content_text}")
+                logger.info(f"Formatted content: {formatted_content}")
+
                 post_payload = {
                     "author": f"urn:li:person:{user.linkedin_id}",
                     "lifecycleState": "PUBLISHED",
                     "specificContent": {
                         "com.linkedin.ugc.ShareContent": {
-                            "shareCommentary": {"text": post.content_text},
+                            "shareCommentary": {
+                                "text": formatted_content
+                            },
                             "shareMediaCategory": "NONE"
                         }
                     },
@@ -135,6 +147,15 @@ def publish_scheduled_linkedin_posts():
                         "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
                     }
                 }
+
+                # Add media if present
+                if post.media_assets:
+                    logger.info(f"Adding media assets to post: {post.media_assets}")
+                    post_payload["specificContent"]["com.linkedin.ugc.ShareContent"]["shareMediaCategory"] = "IMAGE"
+                    post_payload["specificContent"]["com.linkedin.ugc.ShareContent"]["media"] = post.media_assets
+                    logger.info(f"Updated post payload with media: {post_payload}")
+
+                logger.info(f"Scheduler: Post payload: {post_payload}")
                 headers = {
                     "Authorization": f"Bearer {decrypted_access_token}",
                     "X-Restli-Protocol-Version": "2.0.0",
@@ -145,6 +166,8 @@ def publish_scheduled_linkedin_posts():
                 logger.info(f"Scheduler: Sending request to LinkedIn API for post ID {post.id}")
                 try:
                     response = requests.post(linkedin_post_url, headers=headers, json=post_payload, timeout=30)
+                    if response.status_code != 200:
+                        logger.error(f"Scheduler: LinkedIn API error response: {response.text}")
                     response.raise_for_status()
                     linkedin_post_id = response.headers.get("X-RestLi-Id") or response.headers.get("x-restli-id")
                     logger.info(f"Scheduler: Successfully published post ID {post.id} to LinkedIn. LinkedIn Post ID: {linkedin_post_id}")
@@ -157,33 +180,19 @@ def publish_scheduled_linkedin_posts():
                         content = crud.content.get(session=session, content_id=post.content_id)
                         if content:
                             crud.content.mark_as_posted(session=session, content_id=post.content_id)
-
-                except requests.exceptions.RequestException as e:
-                    # Check if error is retryable and retry limit not reached
-                    if post.retry_count < MAX_RETRIES and is_retryable_error(e):
-                        retry_delay_seconds = (RETRY_DELAY_MINUTES * 60) * (2 ** post.retry_count) # Exponential backoff (5m, 20m, 80m)
-                        new_schedule_time = now + timedelta(seconds=retry_delay_seconds)
-                        retry_msg = f"API Error (Retry {post.retry_count + 1}/{MAX_RETRIES} scheduled for {new_schedule_time.isoformat()}): {e}"
-                        logger.warning(f"Scheduler: Post ID {post.id} failed with retryable error. {retry_msg}")
-                        crud.scheduled_post.update_for_retry(
-                            session=session,
-                            db_obj=post,
-                            new_scheduled_at=new_schedule_time,
-                            retry_error_message=retry_msg[:255] # Truncate if needed
-                        )
-                    else:
-                        # Not retryable or max retries reached - fail permanently
-                        error_detail = f"API Error: {e.response.status_code} - {e.response.text}" if e.response else f"Request Error: {e}"
-                        logger.error(f"Scheduler: Failed to publish post ID {post.id} after {post.retry_count} retries or due to non-retryable error. {error_detail}")
-                        crud.scheduled_post.update_post_status(
-                            session=session, db_obj=post, status=PostStatus.FAILED, error_message=(error_message_prefix + error_detail)[:255]
-                        )
                 except Exception as e:
-                    # Catch any other unexpected errors during publishing
-                    logger.error(f"Scheduler: Unexpected error publishing post ID {post.id}: {e}", exc_info=True)
+                    logger.error(f"Scheduler: Failed to publish post ID {post.id}: {str(e)}")
+                    # Update retry count and status
                     crud.scheduled_post.update_post_status(
-                        session=session, db_obj=post, status=PostStatus.FAILED, error_message=(error_message_prefix + f"Unexpected error: {str(e)[:200]}")
+                        session=session,
+                        db_obj=post,
+                        status=PostStatus.FAILED if post.retry_count >= 3 else PostStatus.PENDING,
+                        error_message=error_message_prefix + str(e)
                     )
+                    if post.retry_count < 3:
+                        post.retry_count += 1
+                        session.add(post)
+                        session.commit()
             logger.info("Scheduler: Finished checking posts.")
         except Exception as e:
             # Catch broad exceptions during the whole check cycle
@@ -195,10 +204,15 @@ def publish_scheduled_linkedin_posts():
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Running application startup tasks...")
-    # Superuser creation is now handled by entrypoint.sh for Docker deployments
-    # For local dev, it needs to be run manually via the script.
-
-    # Start the scheduler
+    
+    # Create uploads directory if it doesn't exist
+    os.makedirs("uploads", exist_ok=True)
+    logger.info("Created uploads directory")
+    
+    # Create database tables
+    create_db_and_tables()
+    
+   # Start the scheduler
     try:
         scheduler.add_job(publish_scheduled_linkedin_posts, 'interval', minutes=1, id='publish_linkedin_job', replace_existing=True)
         scheduler.start()
@@ -207,7 +221,9 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error starting scheduler: {e}", exc_info=True)
 
     logger.info("Application startup tasks complete.")
-    yield # Application runs here
+    
+    yield
+    
     # Shutdown
     logger.info("Running application shutdown tasks...")
     try:
@@ -224,6 +240,10 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan # Use the lifespan context manager
 )
+
+# Mount static files
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+logger.info("Mounted uploads directory for static files")
 
 # --- Middleware ---
 

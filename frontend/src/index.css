@@ -74,3 +74,6 @@
     @apply block text-sm font-medium text-gray-600 mb-1;
   }
 }
+input, textarea, select {
+  padding: 5px 10px !important;
+}

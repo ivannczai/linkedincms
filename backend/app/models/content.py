@@ -3,13 +3,14 @@ Content model module.
 
 This module contains the ContentPiece model and related schemas.
 """
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING, Dict, Any
 from datetime import date, datetime, timezone
 from enum import Enum, auto
 
 from pydantic import validator
-from sqlmodel import Field, SQLModel, Relationship, Column, Float, TEXT # Add Column and Float
-from sqlalchemy import DateTime # Import DateTime for timezone support
+from sqlmodel import Field, SQLModel, Relationship, Column, Float, TEXT, JSON
+from sqlalchemy import DateTime
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.models.base import BaseModel, TimestampMixin
 
@@ -44,6 +45,7 @@ class ContentPieceBase(SQLModel):
     review_comment: Optional[str] = Field(default=None)
     client_rating: Optional[float] = Field(default=None)
     is_active: bool = Field(default=True)
+    attachments: Optional[List[str]] = Field(default=None, sa_column=Column(JSONB))
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -66,8 +68,32 @@ class ContentPiece(BaseModel, ContentPieceBase, TimestampMixin, table=True):
     # Optional published timestamp
     published_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     
+    # Attachments field
+    attachments: Optional[List[str]] = Field(default=None, sa_column=Column(JSONB))
+    
+    # LinkedIn media assets
+    linkedin_media_assets: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSONB))
+    
     # Relationships
     client_profile: "ClientProfile" = Relationship(back_populates="content_pieces")
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Convert attachments to list if it's a string
+        if isinstance(self.attachments, str):
+            try:
+                import json
+                self.attachments = json.loads(self.attachments)
+            except:
+                self.attachments = [self.attachments]
+        
+        # Convert linkedin_media_assets to list if it's a string
+        if isinstance(self.linkedin_media_assets, str):
+            try:
+                import json
+                self.linkedin_media_assets = json.loads(self.linkedin_media_assets)
+            except:
+                self.linkedin_media_assets = [self.linkedin_media_assets]
 
 
 class ContentPieceCreate(ContentPieceBase):
@@ -75,6 +101,7 @@ class ContentPieceCreate(ContentPieceBase):
     Schema for creating a new content piece.
     """
     client_id: int
+    attachments: Optional[List[str]] = None
     
     @validator("due_date")
     def due_date_must_be_future(cls, v):
@@ -94,15 +121,26 @@ class ContentPieceRead(ContentPieceBase, BaseModel):
     client_id: int
     review_comment: Optional[str] = None
     published_at: Optional[datetime] = None 
-    client_rating: Optional[float] = None # Add client_rating
+    client_rating: Optional[float] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     scheduled_at: Optional[datetime] = None
+    attachments: Optional[List[str]] = None
 
     class Config:
         json_encoders = {
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S") if v else None
         }
+
+    @validator('attachments', pre=True)
+    def parse_attachments(cls, v):
+        if isinstance(v, str):
+            try:
+                import json
+                return json.loads(v)
+            except:
+                return [v]
+        return v
 
 
 class ContentPieceUpdate(SQLModel):
@@ -117,8 +155,9 @@ class ContentPieceUpdate(SQLModel):
     due_date: Optional[date] = None
     is_active: Optional[bool] = None
     review_comment: Optional[str] = None
-    published_at: Optional[datetime] = None # Add published_at (likely read-only via update)
-    scheduled_at: Optional[datetime] = None # Add scheduled_at
+    published_at: Optional[datetime] = None
+    scheduled_at: Optional[datetime] = None
+    attachments: Optional[List[str]] = None
     
     @validator("due_date")
     def due_date_must_be_future(cls, v):

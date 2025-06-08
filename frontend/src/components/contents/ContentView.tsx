@@ -18,6 +18,10 @@ const ContentView: React.FC<ContentViewProps> = ({ content, onContentUpdated }) 
 
   const isAdmin = user?.role === 'admin';
 
+  React.useEffect(() => {
+    console.log('Content scheduled_at:', content.scheduled_at);
+  }, [content.scheduled_at]);
+
   // Keep handleStatusChange only for admin actions (submit, publish)
   const handleStatusChange = async (action: 'submit' | 'publish') => {
     try {
@@ -107,16 +111,29 @@ const ContentView: React.FC<ContentViewProps> = ({ content, onContentUpdated }) 
         {/* Render HTML content directly */}
         <div className="mb-6">
           <h3 className="text-sm font-medium text-gray-500 mb-2">Content</h3>
-          {/* WARNING: Ensure content.content_body is sanitized on the BACKEND before saving */}
           <div
             className="prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none border rounded-md p-4 bg-gray-50"
             dangerouslySetInnerHTML={{ __html: content.content_body || '' }}
           />
         </div>
 
+        {/* Display attachments if they exist */}
+        {content.attachments && content.attachments.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-500 mb-2">Attached Files</h3>
+            <div className="flex flex-wrap gap-2">
+              {content.attachments.map((attachment, index) => (
+                <div key={index} className="text-sm text-gray-600">
+                  {attachment.split('/').pop()}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-500">
           <div>
-            <span className="font-medium">Due Date:</span>{' '}
+            <span className="font-medium">Proposed posting date:</span>{' '}
             {content.due_date ? formatDate(content.due_date) : 'No due date'}
           </div>
           <div>
@@ -125,19 +142,20 @@ const ContentView: React.FC<ContentViewProps> = ({ content, onContentUpdated }) 
           <div>
             <span className="font-medium">Last Updated:</span>{' '}
             {content.updated_at ? formatDate(content.updated_at) : formatDate(content.created_at)}
-            {/* Show created_at if never updated */}
           </div>
           {content.scheduled_at && (
             <div>
-              <span className="font-medium">Scheduled for:</span> {formatDate(content.scheduled_at)}
-            </div>
-          )}
-          {content.published_at && (
-            <div>
-              <span className="font-medium">Published:</span> {formatDate(content.published_at)}
+              <span className="font-medium">Scheduled for:</span>{' '}
+              {formatDate(content.scheduled_at)}
             </div>
           )}
         </div>
+
+        {content.published_at && (
+          <div className="mt-4 text-sm text-gray-500">
+            <span className="font-medium">Published:</span> {formatDate(content.published_at)}
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mt-4">

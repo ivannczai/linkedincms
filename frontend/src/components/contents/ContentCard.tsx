@@ -190,7 +190,7 @@ const ContentCard: React.FC<ContentCardProps> = ({
 							>
 								{' '}
 								{/* Success style */}
-								<CheckCheck className='h-3 w-3 mr-1' /> Post to LinkedIn
+								<CheckCheck className='h-3 w-3 mr-1' /> Post now
 							</button>
 						</>
 					)}

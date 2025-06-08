@@ -41,6 +41,17 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
 
+    @validator("ACCESS_TOKEN_EXPIRE_MINUTES", pre=True)
+    def parse_access_token_expire_minutes(cls, v: Any) -> int:
+        if isinstance(v, str):
+            # Remove any comments and whitespace
+            v = v.split('#')[0].strip()
+            try:
+                return int(v)
+            except ValueError:
+                raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must be an integer")
+        return v
+
     # CORS
     # Read as a string, split later in main.py
     BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"

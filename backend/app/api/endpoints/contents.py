@@ -4,9 +4,12 @@ Content endpoints module.
 This module contains endpoints for content piece management.
 """
 from typing import Any, List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import os
+import requests
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Form, File, UploadFile
 from sqlmodel import Session
 
 # Import crud functions directly for clarity
@@ -22,8 +25,10 @@ from app.models.content import (
 from app.crud.content import ContentRatingInput
 from app.models.user import User, UserRole
 from app.models.scheduled_post import ScheduledLinkedInPostCreate, PostStatus
+from app.core.security import decrypt_data
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=List[ContentPieceRead])
@@ -77,23 +82,47 @@ def read_contents(
 
 
 @router.post("/", response_model=ContentPieceRead)
-def create_content(
+async def create_content(
     *,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_admin_user),
-    content_in: ContentPieceCreate,
-) -> Any:
-    """
-    Create a new content piece. (Admin only)
-    """
-    # Use the correct CRUD function name
-    client = crud_client.get(session, content_in.client_id) 
-    if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Client with ID {content_in.client_id} not found")
+    title: str = Form(...),
+    idea: str = Form(...),
+    angle: str = Form(...),
+    content_body: str = Form(...),
+    client_id: int = Form(...),
+    is_active: bool = Form(True),
+    attachments: List[UploadFile] = File(None),
+):
+    """Create new content piece."""
+    import traceback
+    try:
+        client = crud_client.get(session=session, client_id=client_id)
+        if not client:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Client not found"
+            )
 
-    # Use the correct CRUD function name
-    content = crud_content.create(session=session, obj_in=content_in) 
-    return content
+        content_in = ContentPieceCreate(
+            title=title,
+            idea=idea,
+            angle=angle,
+            content_body=content_body,
+            client_id=client_id,
+            is_active=is_active
+        )
+
+        content = await crud_content.content.create(
+            session=session,
+            obj_in=content_in,
+            attachments=attachments
+        )
+        return content
+    except Exception as e:
+        print('--- create_content error ---')
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/{content_id}", response_model=ContentPieceRead)
@@ -121,31 +150,84 @@ def read_content(
 
 
 @router.put("/{content_id}", response_model=ContentPieceRead)
-def update_content(
+async def update_content(
     *,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_admin_user),
     content_id: int,
-    content_in: ContentPieceUpdate,
+    title: str = Form(None),
+    idea: str = Form(None),
+    angle: str = Form(None),
+    content_body: str = Form(None),
+    is_active: bool = Form(None),
+    status: ContentStatus = Form(None),
+    attachments: List[UploadFile] = File(None),
+    existing_attachments: List[str] = Form(None),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ) -> Any:
-    """
-    Update a content piece. (Admin only)
-    """
-    content = crud_content.get(session, content_id) 
+    """Update content piece."""
+    print(f"Update content request - ID: {content_id}")
+    print(f"Title: {title}")
+    print(f"Idea: {idea}")
+    print(f"Angle: {angle}")
+    print(f"Content body length: {len(content_body) if content_body else 0}")
+    print(f"Is active: {is_active}")
+    print(f"Status: {status}")
+    print(f"Attachments count: {len(attachments) if attachments else 0}")
+    print(f"Existing attachments: {existing_attachments}")
+    
+    content = crud_content.get(db, content_id)
     if not content:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content piece not found")
-
-    content = crud_content.update(session=session, db_obj=content, obj_in=content_in) 
+        raise HTTPException(status_code=404, detail="Content piece not found")
+    
+    # Створюємо словник з даними для оновлення
+    update_data = {}
+    if title is not None:
+        update_data["title"] = title
+    if idea is not None:
+        update_data["idea"] = idea
+    if angle is not None:
+        update_data["angle"] = angle
+    if content_body is not None:
+        update_data["content_body"] = content_body
+    if is_active is not None:
+        update_data["is_active"] = is_active
+    if status is not None:
+        if current_user.role == UserRole.ADMIN:
+            update_data["status"] = status
+        else:
+            raise HTTPException(status_code=403, detail="Only admin can change content status")
+    
+    print(f"Update data: {update_data}")
+    
+    # Створюємо об'єкт ContentPieceUpdate
+    content_update = ContentPieceUpdate(**update_data)
+    
+    # Оновлюємо контент
+    content = await crud_content.content.update(
+        db=db,
+        db_obj=content,
+        obj_in=content_update,
+        user=current_user,
+        attachments=attachments,
+        existing_attachments=existing_attachments
+    )
     return content
 
 
 @router.put("/client/{content_id}", response_model=ContentPieceRead)
-def update_content_client(
+async def update_content_client(
     *,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_client_user),
     content_id: int,
-    content_in: ContentPieceUpdate,
+    title: str = Form(...),
+    idea: str = Form(...),
+    angle: str = Form(...),
+    content_body: str = Form(...),
+    is_active: bool = Form(True),
+    status: ContentStatus = Form(...),
+    attachments: List[UploadFile] = File(None),
+    existing_attachments: List[str] = Form(None),
 ) -> Any:
     """
     Update a content piece. (Client only)
@@ -162,7 +244,23 @@ def update_content_client(
         if content.status == ContentStatus.PUBLISHED:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit published content")
 
-        content = crud_content.update(session=session, db_obj=content, obj_in=content_in)
+        content_in = ContentPieceUpdate(
+            title=title,
+            idea=idea,
+            angle=angle,
+            content_body=content_body,
+            is_active=is_active,
+            status=status
+        )
+
+        content = await crud_content.content.update(
+            db=session,
+            db_obj=content,
+            obj_in=content_in,
+            user=current_user,
+            attachments=attachments,
+            existing_attachments=existing_attachments
+        )
         return content
     except Exception as e:
         print('--- update_content_client error ---')
@@ -365,57 +463,261 @@ def rate_content_endpoint(
         print(f"Unexpected error rating content: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
-@router.post("/{content_id}/schedule", response_model=ContentPieceRead)
-def schedule_content(
+@router.post("/{content_id}/post-now", response_model=ContentPieceRead)
+async def post_content_now(
     *,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user), # Client action
+    current_user: User = Depends(get_current_user),
+    content_id: int,
+) -> Any:
+    """
+    Post content immediately.
+    """
+    # Get content
+    content = crud_content.get(session=session, content_id=content_id)
+    if not content:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    
+    # Get client profile
+    client_profile = crud_client.get_by_user_id(session=session, user_id=current_user.id)
+    if not client_profile:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Client profile not found")
+    
+    # Check permissions
+    if content.client_id != client_profile.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+    
+    # Check content status
+    if content.status not in [ContentStatus.DRAFT, ContentStatus.REVISION_REQUESTED, ContentStatus.APPROVED]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot post content with status {content.status}"
+        )
+
+    # Handle media assets if content has attachments
+    media_assets = []
+    if content.attachments:
+        try:
+            # Get LinkedIn access token
+            if not current_user.linkedin_access_token:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="LinkedIn account not connected"
+                )
+            
+            access_token = decrypt_data(current_user.linkedin_access_token)
+            
+            # Upload each attachment to LinkedIn
+            for attachment in content.attachments:
+                try:
+                    # Register upload
+                    register_url = "https://api.linkedin.com/v2/assets?action=registerUpload"
+                    register_headers = {
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json",
+                        "X-Restli-Protocol-Version": "2.0.0"
+                    }
+                    register_data = {
+                        "registerUploadRequest": {
+                            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                            "owner": f"urn:li:person:{current_user.linkedin_id}",
+                            "serviceRelationships": [
+                                {
+                                    "relationshipType": "OWNER",
+                                    "identifier": "urn:li:userGeneratedContent"
+                                }
+                            ]
+                        }
+                    }
+                    
+                    logger.info(f"Registering upload for {attachment}")
+                    register_response = requests.post(register_url, headers=register_headers, json=register_data)
+                    register_response.raise_for_status()
+                    upload_data = register_response.json()
+                    logger.info(f"Upload registration response: {upload_data}")
+                    
+                    # Upload file
+                    upload_url = upload_data["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
+                    asset = upload_data["value"]["asset"]
+                    
+                    # Read file from uploads directory
+                    file_path = attachment if os.path.exists(attachment) else os.path.join("uploads", attachment)
+                    if not os.path.exists(file_path):
+                        logger.error(f"File not found: {file_path}")
+                        continue
+                        
+                    logger.info(f"Uploading file {file_path} to LinkedIn")
+                    with open(file_path, "rb") as f:
+                        upload_response = requests.put(upload_url, data=f.read(), headers={"Authorization": f"Bearer {access_token}"})
+                        upload_response.raise_for_status()
+                    logger.info(f"File uploaded successfully, asset: {asset}")
+                    
+                    # Add asset URN to list
+                    media_assets.append({
+                        "status": "READY",
+                        "media": asset
+                    })
+                    logger.info(f"Added media asset to list: {media_assets[-1]}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to upload {attachment} to LinkedIn: {str(e)}")
+                    if hasattr(e, 'response'):
+                        logger.error(f"Response content: {e.response.content}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Failed to process media assets: {str(e)}")
+            # Continue without media assets if there's an error
+
+    # Create scheduled post record with 5 second delay
+    logger.info(f"Creating immediate post with content: {content.content_body}")
+    logger.info(f"Creating immediate post with media assets: {media_assets}")
+    scheduled_post = crud_scheduled_post.create_scheduled_post(
+        session=session,
+        obj_in=ScheduledLinkedInPostCreate(
+            user_id=current_user.id,
+            content_id=content.id,
+            content_text=content.content_body,
+            scheduled_at=datetime.now(timezone.utc) + timedelta(seconds=5),
+            status=PostStatus.PENDING,
+            media_assets=media_assets if media_assets else None
+        )
+    )
+    logger.info(f"Created immediate post: {scheduled_post}")
+
+    # Mark content as posted immediately
+    content = crud_content.update_status(
+        session=session,
+        content_id=content.id,
+        new_status=ContentStatus.PUBLISHED,
+        scheduled_at=datetime.now(timezone.utc) + timedelta(seconds=5)
+    )
+
+    return content
+
+@router.post("/{content_id}/schedule", response_model=ContentPieceRead)
+async def schedule_content(
+    *,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
     content_id: int,
     scheduled_at: str = Body(..., embed=True),
 ) -> Any:
     """
-    Schedule a content piece for publication. (Client only)
+    Schedule content for publishing.
     """
-    if current_user.role != UserRole.CLIENT:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only client users can schedule content")
-
-    content = crud_content.get(session, content_id)
+    # Get content
+    content = crud_content.get(session=session, content_id=content_id)
     if not content:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content piece not found")
-
-    client_profile = crud_client.get_by_user_id(session, user_id=current_user.id)
-    if not client_profile or content.client_id != client_profile.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
-
-    if content.status != ContentStatus.APPROVED:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Content must be approved to be scheduled")
-
-    # Convert scheduled_at string to datetime
-    try:
-        if scheduled_at.endswith('Z'):
-            scheduled_at = scheduled_at[:-1] + '+00:00'
-
-        if '.' in scheduled_at:
-            main_part, tz_part = scheduled_at.rsplit('+', 1)
-            main_part = main_part.split('.')[0]
-            scheduled_at = f"{main_part}+{tz_part}"
-
-        scheduled_at_dt = datetime.fromisoformat(scheduled_at)
-        if scheduled_at_dt.tzinfo is not None:
-            scheduled_at_dt = scheduled_at_dt.astimezone(timezone.utc)
-        else:
-            scheduled_at_dt = scheduled_at_dt.replace(tzinfo=timezone.utc)
-            
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SSZ)")
-
-    # Check if date is in the future
-    now = datetime.now(timezone.utc)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
     
+    # Get client profile
+    client_profile = crud_client.get_by_user_id(session=session, user_id=current_user.id)
+    if not client_profile:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Client profile not found")
+    
+    # Check permissions
+    if content.client_id != client_profile.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+    
+    # Check content status
+    if content.status not in [ContentStatus.DRAFT, ContentStatus.REVISION_REQUESTED, ContentStatus.APPROVED]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot schedule content with status {content.status}"
+        )
+    
+    # Parse scheduled time
+    try:
+        scheduled_at_dt = datetime.fromisoformat(scheduled_at)
+        if scheduled_at_dt.tzinfo is None:
+            scheduled_at_dt = scheduled_at_dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format")
+    
+    # Check if scheduled time is in the future
+    now = datetime.now(timezone.utc)
     if scheduled_at_dt <= now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scheduled time must be in the future")
 
-    # Create scheduled post record first
+    # Handle media assets if content has attachments
+    media_assets = []
+    if content.attachments:
+        try:
+            # Get LinkedIn access token
+            if not current_user.linkedin_access_token:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="LinkedIn account not connected"
+                )
+            
+            access_token = decrypt_data(current_user.linkedin_access_token)
+            
+            # Upload each attachment to LinkedIn
+            for attachment in content.attachments:
+                try:
+                    # Register upload
+                    register_url = "https://api.linkedin.com/v2/assets?action=registerUpload"
+                    register_headers = {
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json",
+                        "X-Restli-Protocol-Version": "2.0.0"
+                    }
+                    register_data = {
+                        "registerUploadRequest": {
+                            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                            "owner": f"urn:li:person:{current_user.linkedin_id}",
+                            "serviceRelationships": [
+                                {
+                                    "relationshipType": "OWNER",
+                                    "identifier": "urn:li:userGeneratedContent"
+                                }
+                            ]
+                        }
+                    }
+                    
+                    logger.info(f"Registering upload for {attachment}")
+                    register_response = requests.post(register_url, headers=register_headers, json=register_data)
+                    register_response.raise_for_status()
+                    upload_data = register_response.json()
+                    logger.info(f"Upload registration response: {upload_data}")
+                    
+                    # Upload file
+                    upload_url = upload_data["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
+                    asset = upload_data["value"]["asset"]
+                    
+                    # Read file from uploads directory
+                    file_path = attachment if os.path.exists(attachment) else os.path.join("uploads", attachment)
+                    if not os.path.exists(file_path):
+                        logger.error(f"File not found: {file_path}")
+                        continue
+                        
+                    logger.info(f"Uploading file {file_path} to LinkedIn")
+                    with open(file_path, "rb") as f:
+                        upload_response = requests.put(upload_url, data=f.read(), headers={"Authorization": f"Bearer {access_token}"})
+                        upload_response.raise_for_status()
+                    logger.info(f"File uploaded successfully, asset: {asset}")
+                    
+                    # Add asset URN to list
+                    media_assets.append({
+                        "status": "READY",
+                        "media": asset
+                    })
+                    logger.info(f"Added media asset to list: {media_assets[-1]}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to upload {attachment} to LinkedIn: {str(e)}")
+                    if hasattr(e, 'response'):
+                        logger.error(f"Response content: {e.response.content}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Failed to process media assets: {str(e)}")
+            # Continue without media assets if there's an error
+
+    # Create scheduled post record with 5 second delay
+    logger.info(f"Creating scheduled post with content: {content.content_body}")
+    logger.info(f"Creating scheduled post with media assets: {media_assets}")
     scheduled_post = crud_scheduled_post.create_scheduled_post(
         session=session,
         obj_in=ScheduledLinkedInPostCreate(
@@ -423,19 +725,24 @@ def schedule_content(
             content_id=content.id,
             content_text=content.content_body,
             scheduled_at=scheduled_at_dt,
-            status=PostStatus.PENDING
+            status=PostStatus.PENDING,
+            media_assets=media_assets if media_assets else None
         )
     )
-    print(f"scheduled (local): {scheduled_post.scheduled_at.astimezone().isoformat()}")
+    logger.info(f"Created scheduled post: {scheduled_post}")
 
-    # Update content status after successful post creation
-    content = crud_content.update(
-        session=session,
-        db_obj=content,
-        obj_in=ContentPieceUpdate(
-            status=ContentStatus.SCHEDULED,
-            scheduled_at=scheduled_at_dt
-        )
+    # Update content status to scheduled
+    content = crud_content.update_status(
+        session=session, 
+        content_id=content.id, 
+        new_status=ContentStatus.SCHEDULED,
+        scheduled_at=scheduled_at_dt
     )
+    
+    # Update scheduled_at field
+    content.scheduled_at = scheduled_at_dt
+    session.add(content)
+    session.commit()
+    session.refresh(content)
 
     return content

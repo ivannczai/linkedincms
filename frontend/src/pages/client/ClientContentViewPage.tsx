@@ -171,7 +171,18 @@ const ClientContentViewPage: React.FC = () => {
 
 	const handleMarkAsPosted = async () => {
 		if (!content) return;
-		navigate(`/dashboard/linkedin/schedule?id=${content.id}`);
+		setIsSubmitting(true);
+		setError(null);
+		try {
+			await contentService.postNow(content.id);
+			navigate('/client/library');
+			// navigate(`/dashboard/linkedin/schedule?id=${content.id}`);
+		} catch (err: any) {
+			console.error('Failed to post content:', err);
+			setError(err.message || 'Failed to post content. Please try again.');
+		} finally {
+			setIsSubmitting(false);
+		}
 	};
 
 	if (loading) {
@@ -331,7 +342,7 @@ const ClientContentViewPage: React.FC = () => {
 						disabled={isSubmitting}
 						className='btn btn-secondary'
 					>
-						{isSubmitting ? 'Posting...' : 'Post to LinkedIn'}
+						{isSubmitting ? 'Posting...' : 'Post now'}
 					</button>
 					<button
 						onClick={() => navigate(`/client/contents/${content.id}/edit?schedule=true`)}
