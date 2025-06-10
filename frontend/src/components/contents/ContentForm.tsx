@@ -63,7 +63,8 @@ const ContentForm: React.FC<ContentFormProps> = ({
     const baseUrl = isLocalhost
       ? 'http://localhost:8000'
       : 'https://linkedin.rafinhafaria.com.br';
-    return `${baseUrl}/${path}`;
+      const encodedPath = encodeURI(path);
+    return `${baseUrl}/${encodedPath}`;
   };
   
 
