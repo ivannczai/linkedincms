@@ -77,3 +77,6 @@
 input, textarea, select {
   padding: 5px 10px !important;
 }
+.tiptap.ProseMirror {
+  min-height: 200px;
+}

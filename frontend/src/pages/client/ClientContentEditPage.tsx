@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import contentService, { Content, ContentUpdateInput, ContentStatus } from '../../services/contents';
@@ -28,7 +28,7 @@ const ClientContentEditPage: React.FC = () => {
   });
   const [attachments, setAttachments] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<string[]>([]);
-
+  const editorWrapperRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const fetchContent = async () => {
       if (!contentId) return;
@@ -101,6 +101,12 @@ const ClientContentEditPage: React.FC = () => {
 
   const handleRemoveExistingAttachment = (index: number) => {
     setExistingAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleClick = () => {
+    if (editorWrapperRef.current) {
+      (editorWrapperRef.current.querySelector('.ProseMirror') as HTMLElement)?.focus();
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -202,7 +208,7 @@ const ClientContentEditPage: React.FC = () => {
           <label htmlFor="content_body" className="block text-sm font-medium text-gray-700">
             Content
           </label>
-          <div className="mt-1">
+          <div className="mt-1 cursor-text"  ref={editorWrapperRef} onClick={handleClick}>
             <TipTapEditor
               content={formData.content_body || ''}
               onChange={(value) => setFormData({ ...formData, content_body: value })}

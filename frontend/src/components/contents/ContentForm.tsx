@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Content, ContentStatus } from '../../services/contents';
 import contentService from '../../services/contents';
 import { useNavigate } from 'react-router-dom';
@@ -39,7 +39,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-
+  const editorWrapperRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (content) {
       console.log('Content:', content);
@@ -66,7 +66,12 @@ const ContentForm: React.FC<ContentFormProps> = ({
       const encodedPath = encodeURI(path);
     return `${baseUrl}/${encodedPath}`;
   };
-  
+
+  const handleClick = () => {
+    if (editorWrapperRef.current) {
+      (editorWrapperRef.current.querySelector('.ProseMirror') as HTMLElement)?.focus();
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,7 +248,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
           <label htmlFor="content_body" className="block text-sm font-medium text-gray-700">
             Content Body
           </label>
-          <div className="mt-1">
+          <div className="mt-1 cursor-text"  ref={editorWrapperRef} onClick={handleClick}>
             <TipTapEditor
               content={contentBody}
               onChange={setContentBody}
